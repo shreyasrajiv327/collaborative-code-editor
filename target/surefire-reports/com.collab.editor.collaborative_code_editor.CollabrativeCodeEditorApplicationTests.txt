@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.collab.editor.collaborative_code_editor.CollabrativeCodeEditorApplicationTests
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.264 s -- in com.collab.editor.collaborative_code_editor.CollabrativeCodeEditorApplicationTests
