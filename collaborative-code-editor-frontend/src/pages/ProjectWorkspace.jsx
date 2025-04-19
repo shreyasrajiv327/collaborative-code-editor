@@ -7,7 +7,6 @@ import { Client } from "@stomp/stompjs";
 import debounce from "lodash/debounce";
 import { toast } from 'react-toastify';
 import useExecuteCode from './ExecutionProject';
-import Navbar from '../components/Navbar';
 import {
   FolderIcon,
   DocumentIcon,
@@ -16,6 +15,7 @@ import {
   ChevronRightIcon,
   CodeBracketIcon,
   ArrowLeftIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 const ProjectWorkspace = () => {
@@ -24,11 +24,13 @@ const ProjectWorkspace = () => {
   const location = useLocation();
   const [project, setProject] = useState(null);
   const [files, setFiles] = useState([]);
-  const [selectedItem, setSelectedItem] = useState(null); // Tracks selected file or folder
+  const [selectedItem, setSelectedItem] = useState(null);
   const [fileContent, setFileContent] = useState("");
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
   const [newFileName, setNewFileName] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
@@ -54,7 +56,6 @@ const ProjectWorkspace = () => {
   const subscriptionRef = useRef(null);
   const userId = localStorage.getItem("githubLogin");
 
-  // Determine language based on file extension
   const getFileTypeInfo = (filePath) => {
     if (!filePath) return { language: "plaintext", judge0Language: null };
     const extension = filePath.split(".").pop().toLowerCase();
@@ -73,7 +74,6 @@ const ProjectWorkspace = () => {
     return languageMap[extension] || { language: "plaintext", judge0Language: null };
   };
 
-  // Debounced function to send editor changes
   const sendEditorChange = useCallback(
     debounce((value) => {
       if (stompClient.current?.connected && selectedItem?.type === "file") {
@@ -97,7 +97,6 @@ const ProjectWorkspace = () => {
     [projectId, selectedItem, userId]
   );
 
-  // Initialize WebSocket connection and join workspace
   useEffect(() => {
     const socket = new SockJS("http://localhost:8080/ws");
     stompClient.current = new Client({
@@ -106,13 +105,11 @@ const ProjectWorkspace = () => {
       onConnect: () => {
         console.log("WebSocket connected");
 
-        // Join the project workspace
         stompClient.current.publish({
           destination: `/app/join/${projectId}/`,
           body: JSON.stringify(userId),
         });
 
-        // Subscribe to session updates
         stompClient.current.subscribe(`/topic/session/${projectId}`, (message) => {
           console.log("Session update:", message.body);
         });
@@ -146,7 +143,6 @@ const ProjectWorkspace = () => {
     };
   }, [projectId, userId]);
 
-  // Manage subscriptions when selectedItem changes
   useEffect(() => {
     if (stompClient.current?.connected && projectId && selectedItem?.type === "file") {
       if (subscriptionRef.current) {
@@ -180,7 +176,6 @@ const ProjectWorkspace = () => {
               editorRef.current.setPosition(position);
             }
           }
-          // Update file tree
           const updatedFiles = updateFileByPath(files, selectedItem.path, (file) => ({
             ...file,
             content: newContent,
@@ -202,7 +197,6 @@ const ProjectWorkspace = () => {
     }
   };
 
-  // Fetch project data
   useEffect(() => {
     const fetchProjectData = async () => {
       setLoading(true);
@@ -278,7 +272,6 @@ const ProjectWorkspace = () => {
     fetchProjectData();
   }, [projectId, navigate]);
 
-  // Handle editor changes
   const handleEditorChange = (value) => {
     setFileContent(value);
     sendEditorChange(value);
@@ -293,7 +286,6 @@ const ProjectWorkspace = () => {
     setFiles(updatedFiles);
   };
 
-  // Commit changes to GitHub
   const handleCommit = async () => {
     if (!commitMessage) {
       toast.error('Please enter a commit message', { position: 'top-right' });
@@ -308,8 +300,13 @@ const ProjectWorkspace = () => {
     const filesWithPaths = {};
     const allFiles = collectAllFiles(files);
     allFiles.forEach((file) => {
-      if (modifiedFiles[file.path] && modifiedFiles[file.path] !== file.originalContent) {
+      if (modifiedFiles[file.path] !== undefined) {
         filesWithPaths[file.path] = modifiedFiles[file.path];
+      }
+    });
+    Object.entries(modifiedFiles).forEach(([path, content]) => {
+      if (!allFiles.some((file) => file.path === path)) {
+        filesWithPaths[path] = content;
       }
     });
 
@@ -341,13 +338,13 @@ const ProjectWorkspace = () => {
       }
 
       const updatedFiles = files.map((file) => {
-        if (file.type === "file" && filesWithPaths[file.path]) {
+        if (file.type === "file" && filesWithPaths[file.path] !== undefined) {
           return { ...file, originalContent: filesWithPaths[file.path] };
         } else if (file.type === "folder" && file.children) {
           return {
             ...file,
             children: file.children.map((child) =>
-              child.type === "file" && filesWithPaths[child.path]
+              child.type === "file" && filesWithPaths[child.path] !== undefined
                 ? { ...child, originalContent: filesWithPaths[child.path] }
                 : child
             ),
@@ -376,7 +373,6 @@ const ProjectWorkspace = () => {
     }
   };
 
-  // Leave workspace
   const leaveWorkspace = () => {
     if (hasUncommittedChanges()) {
       setIsLeaveModalOpen(true);
@@ -391,7 +387,6 @@ const ProjectWorkspace = () => {
     }
   };
 
-  // Build file tree
   const buildFileTree = (fileData) => {
     const tree = [];
     const folders = {};
@@ -592,7 +587,6 @@ const ProjectWorkspace = () => {
     let updatedFiles = [...files];
     const newFileContent = "";
 
-    // Determine target path
     let targetPath = newFileName;
     let parentPath = "";
     if (selectedItem) {
@@ -605,7 +599,6 @@ const ProjectWorkspace = () => {
       }
     }
 
-    // Check for duplicates
     const parentFolder = parentPath ? findFileByPath(files, parentPath) : { children: files };
     if (parentFolder?.children?.some((item) => item.name === newFileName)) {
       alert("A file or folder with this name already exists");
@@ -630,6 +623,10 @@ const ProjectWorkspace = () => {
     }
 
     setFiles(updatedFiles);
+    setModifiedFiles((prev) => ({
+      ...prev,
+      [targetPath]: newFileContent,
+    }));
     if (parentPath) {
       setExpandedFolders((prev) => ({
         ...prev,
@@ -651,7 +648,6 @@ const ProjectWorkspace = () => {
     }
     let updatedFiles = [...files];
 
-    // Determine target path
     let targetPath = newFolderName;
     let parentPath = "";
     if (selectedItem) {
@@ -664,7 +660,6 @@ const ProjectWorkspace = () => {
       }
     }
 
-    // Check for duplicates
     const parentFolder = parentPath ? findFileByPath(files, parentPath) : { children: files };
     if (parentFolder?.children?.some((item) => item.name === newFolderName)) {
       alert("A file or folder with this name already exists");
@@ -688,6 +683,10 @@ const ProjectWorkspace = () => {
     }
 
     setFiles(updatedFiles);
+    setModifiedFiles((prev) => ({
+      ...prev,
+      [targetPath]: "",
+    }));
     setExpandedFolders((prev) => ({
       ...prev,
       [targetPath]: true,
@@ -697,13 +696,58 @@ const ProjectWorkspace = () => {
     setIsCreateFolderModalOpen(false);
   };
 
+  const handleDeleteItem = () => {
+    if (!itemToDelete) return;
+
+    const parentPath = getParentPath(itemToDelete.path);
+    let updatedFiles = [...files];
+
+    if (itemToDelete.type === "folder") {
+      const collectPaths = (item) => {
+        const paths = [item.path];
+        if (item.children) {
+          item.children.forEach((child) => {
+            paths.push(...collectPaths(child));
+          });
+        }
+        return paths;
+      };
+      const pathsToDelete = collectPaths(itemToDelete);
+      setModifiedFiles((prev) => {
+        const newModified = { ...prev };
+        pathsToDelete.forEach((path) => {
+          newModified[path] = null;
+        });
+        return newModified;
+      });
+    } else {
+      setModifiedFiles((prev) => ({
+        ...prev,
+        [itemToDelete.path]: null,
+      }));
+    }
+
+    if (parentPath) {
+      updatedFiles = updateFileByPath(updatedFiles, parentPath, (folder) => ({
+        ...folder,
+        children: folder.children.filter((child) => child.path !== itemToDelete.path),
+      }));
+    } else {
+      updatedFiles = updatedFiles.filter((file) => file.path !== itemToDelete.path);
+    }
+
+    setFiles(updatedFiles);
+    if (selectedItem?.path === itemToDelete.path || (itemToDelete.type === "folder" && selectedItem?.path.startsWith(itemToDelete.path))) {
+      setSelectedItem(null);
+      setFileContent("");
+    }
+    setIsDeleteModalOpen(false);
+    setItemToDelete(null);
+    toast.success(`${itemToDelete.type === "file" ? "File" : "Folder"} deleted`, { position: 'top-right' });
+  };
+
   const hasUncommittedChanges = () => {
-    const allFiles = collectAllFiles(files);
-    return allFiles.some(
-      (file) =>
-        modifiedFiles[file.path] &&
-        modifiedFiles[file.path] !== file.originalContent
-    );
+    return Object.keys(modifiedFiles).length > 0;
   };
 
   const handleLeaveConfirm = (commitFirst) => {
@@ -756,33 +800,45 @@ const ProjectWorkspace = () => {
             onClick={() => handleFileClick(file)}
           >
             {file.name}
-            {modifiedFiles[file.path] && modifiedFiles[file.path] !== file.originalContent && (
+            {modifiedFiles[file.path] !== undefined && (
               <span className="text-red-500 ml-1">*</span>
             )}
           </span>
-          {getFileTypeInfo(file.path).judge0Language && (
+          <div className="flex items-center space-x-2">
+            {getFileTypeInfo(file.path).judge0Language && (
+              <button
+                onClick={() => {
+                  handleFileClick(file);
+                  const fileData = findFileByPath(files, file.path);
+                  executeCode(
+                    file.path,
+                    fileData.content,
+                    projectId,
+                    userId,
+                    getFileTypeInfo(file.path).judge0Language,
+                    executionInput
+                  );
+                }}
+                disabled={executionLoading}
+                className={`text-orange-400 hover:text-orange-500 p-1 rounded-full transition-all duration-200 ease-in-out ${
+                  executionLoading ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+                title="Execute file"
+              >
+                <PlayIcon className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => {
-                handleFileClick(file); // Open the file in the editor
-                const fileData = findFileByPath(files, file.path);
-                executeCode(
-                  file.path,
-                  fileData.content,
-                  projectId,
-                  userId,
-                  getFileTypeInfo(file.path).judge0Language,
-                  executionInput
-                );
+                setItemToDelete(file);
+                setIsDeleteModalOpen(true);
               }}
-              disabled={executionLoading}
-              className={`text-orange-400 hover:text-orange-500 p-1 rounded-full transition-all duration-200 ease-in-out ${
-                executionLoading ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-              title="Execute file"
+              className="text-red-400 hover:text-red-500 p-1 rounded-full transition-all duration-200 ease-in-out"
+              title="Delete file"
             >
-              <PlayIcon className="w-4 h-4" />
+              <TrashIcon className="w-4 h-4" />
             </button>
-          )}
+          </div>
         </li>
       ) : (
         <li key={file.path}>
@@ -807,8 +863,21 @@ const ProjectWorkspace = () => {
                 }`}
               >
                 {file.name}
+                {modifiedFiles[file.path] !== undefined && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
               </span>
             </div>
+            <button
+              onClick={() => {
+                setItemToDelete(file);
+                setIsDeleteModalOpen(true);
+              }}
+              className="text-red-400 hover:text-red-500 p-1 rounded-full transition-all duration-200 ease-in-out"
+              title="Delete folder"
+            >
+              <TrashIcon className="w-4 h-4" />
+            </button>
           </div>
           {expandedFolders[file.path] ? (
             file.children && file.children.length > 0 ? (
@@ -823,9 +892,7 @@ const ProjectWorkspace = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
-      <Navbar />
-      <div className="w-full px-0 py-12">
-        {/* Header */}
+      <div className="w-full px-0 pt-5 pb-15">
         <div className="mb-6 flex items-center justify-between px-4 sm:px-6">
           <div>
             <h1 className="text-3xl font-semibold text-gray-900">
@@ -844,7 +911,6 @@ const ProjectWorkspace = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-1">
-          {/* Left Sidebar - File Tree */}
           <div
             className={`lg:w-1/5 bg-white shadow-sm rounded-2xl p-4 transition-all duration-300 ease-in-out ${
               isSidebarOpen ? 'block' : 'hidden lg:block'
@@ -916,7 +982,6 @@ const ProjectWorkspace = () => {
             </div>
           </div>
 
-          {/* Center - Code Editor and Execution Results */}
           <div className="lg:w-7/12 flex flex-col gap-1">
             {loading ? (
               <div className="flex items-center justify-center h-[70vh] bg-gray-100 rounded-2xl">
@@ -1064,7 +1129,6 @@ const ProjectWorkspace = () => {
             )}
           </div>
 
-          {/* Right Sidebar - Chat */}
           <div
             className={`lg:w-1/4 bg-white shadow-sm rounded-2xl p-4 transition-all duration-300 ease-in-out ml-0 border border-gray-100`}
           >
@@ -1074,7 +1138,6 @@ const ProjectWorkspace = () => {
         </div>
       </div>
 
-      {/* Modals */}
       {isCreateFileModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50 transition-opacity duration-300 ease-in-out">
           <div className="bg-white shadow-md rounded-2xl p-8 w-full max-w-md transform transition-all duration-300 ease-in-out scale-100">
@@ -1181,6 +1244,35 @@ const ProjectWorkspace = () => {
                 className="bg-gradient-to-r from-purple-400 to-purple-500 text-white px-4 py-2 rounded-lg font-medium hover:from-purple-500 hover:to-purple-600 transition-all duration-200 ease-in-out transform hover:scale-102 focus:outline-none focus:ring-2 focus:ring-purple-300"
               >
                 Commit and Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDeleteModalOpen && itemToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50 transition-opacity duration-300 ease-in-out">
+          <div className="bg-white shadow-md rounded-2xl p-8 w-full max-w-md transform transition-all duration-300 ease-in-out scale-100">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Delete {itemToDelete.type === "file" ? "File" : "Folder"}</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Are you sure you want to delete "{itemToDelete.name}"?{" "}
+              {itemToDelete.type === "folder" && "This will delete all contents inside the folder."}
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setItemToDelete(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 font-medium px-4 py-2 rounded-lg transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteItem}
+                className="bg-gradient-to-r from-red-400 to-red-500 text-white px-4 py-2 rounded-lg font-medium hover:from-red-500 hover:to-red-600 transition-all duration-200 ease-in-out transform hover:scale-102 focus:outline-none focus:ring-2 focus:ring-red-300"
+              >
+                Delete
               </button>
             </div>
           </div>
