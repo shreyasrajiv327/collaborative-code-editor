@@ -4,37 +4,62 @@ const Navbar = () => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    const accessToken = localStorage.getItem('token');
-
+    console.log("Logging out...");
+  
+    const accessToken = localStorage.getItem("token");
+    const githubLogin = localStorage.getItem("githubLogin");
+  
     if (!accessToken) {
-      alert('Access token missing. Please log in again.');
+      alert("Access token missing. Please log in again.");
       return;
     }
+  
+    if (!githubLogin) {
+      alert("Account details missing. Please log in again.");
+      return;
+    }
+  
     try {
-      // Call the backend logout endpoint
-      await fetch('/api/auth/logout', {
+      const response = await fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
         },
+        body: JSON.stringify({
+          githubLogin: githubLogin
+        })
       });
-
-      console.log('Logged out');
-
-      // Remove tokens or session data from localStorage
+  
+      if (!response.ok) {
+        const errorText = await response.text(); // fallback for non-JSON
+        throw new Error(errorText || "Unknown error occurred during logout.");
+      }
+  
+      // Try to parse the JSON safely
+      let data = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+        console.log(data.message);
+      }
+  
+      console.log("Logged out");
+  
+      // Clear localStorage
       localStorage.removeItem('token');
       localStorage.removeItem('name');
       localStorage.removeItem('avatarUrl');
       localStorage.removeItem('githubLogin');
       localStorage.removeItem('githubUrl');
       localStorage.removeItem('email');
-
-      // Redirect to the home page (login)
+  
       navigate('/');
     } catch (error) {
-      console.error('Logout failed', error);
+      console.error('Logout failed:', error.message);
     }
   };
+  
 
   return (
     <nav className="bg-black shadow-sm py-4 px-4 sm:px-6 lg:px-8">

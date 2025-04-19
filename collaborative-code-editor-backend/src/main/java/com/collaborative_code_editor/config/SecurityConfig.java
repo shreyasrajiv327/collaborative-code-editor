@@ -104,12 +104,12 @@ public class SecurityConfig {
                         })
                 )
 
-                .logout(logout -> logout
-                        .logoutUrl("/api/auth/logout") // Custom logout URL
-                        .logoutSuccessUrl("http://localhost:5173/") // Redirect after logout
-                        .invalidateHttpSession(true) // Invalidate session
-                        .deleteCookies("JSESSIONID") // Remove session cookie
-                )
+//                .logout(logout -> logout
+//                        .logoutUrl("/api/auth/logout") // Custom logout URL
+//                        .logoutSuccessUrl("http://localhost:5173/") // Redirect after logout
+//                        .invalidateHttpSession(true) // Invalidate session
+//                        .deleteCookies("JSESSIONID") // Remove session cookie
+//                )
 
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

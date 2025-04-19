@@ -2,12 +2,12 @@ package com.collaborative_code_editor.service;
 
 import com.collaborative_code_editor.model.User;
 import com.collaborative_code_editor.repository.UserRepository;
+import com.collaborative_code_editor.service.RedisService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -33,7 +33,7 @@ public class AuthService {
     private String githubClientSecret;
 
     @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
+    private RedisService redisService;
 
     @Autowired
     private UserRepository userRepository;
@@ -53,7 +53,7 @@ public class AuthService {
         userDetails.put("avatarUrl", attributes.get("avatar_url"));
         userDetails.put("githubId", attributes.get("id"));
         userDetails.put("githubUrl", attributes.get("url"));
-        redisTemplate.opsForValue().set(githubLogin, userDetails, 1, TimeUnit.HOURS);
+        redisService.storeUserSession(githubLogin, userDetails, 1, TimeUnit.HOURS);
 
         // MongoDB Persistence (Check if the user already exists)
         if (!userRepository.existsByGithubLogin(githubLogin)) {

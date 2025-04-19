@@ -12,12 +12,21 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class RedisService {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    public void storeUserSession(String githubLogin, Map<String, Object> userDetails, long duration, TimeUnit unit) {
+        redisTemplate.opsForValue().set(githubLogin, userDetails, duration, unit);
+    }
+
+    public void removeUserSession(String githubLogin) {
+        redisTemplate.delete(githubLogin);
+    }
 
     public void addUserToProject(String projectId, String userId) {
         redisTemplate.opsForSet().add("users:" + projectId, userId);
