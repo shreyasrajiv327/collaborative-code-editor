@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import Projects from './Projects';
+
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
@@ -64,48 +66,44 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
       <Navbar />
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 max-w-2xl">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-8 text-center tracking-tight">
-          Hello, {user.name} 👋
-        </h2>
-        <div className="bg-white shadow-lg rounded-2xl p-8 transition-all duration-300 hover:shadow-xl">
-          <div className="flex flex-col items-center">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Greeting + User Info */}
+        <div className="max-w-3xl mx-auto bg-white shadow-lg rounded-2xl p-8 mb-10">
+          <div className="flex flex-col items-center text-center">
             <img
               src={user.avatarUrl}
               alt="Avatar"
-              className="rounded-full w-24 h-24 mb-6 border-4 border-gray-100 shadow-sm transform hover:scale-105 transition-transform duration-200"
+              className="rounded-full w-24 h-24 mb-4 border-4 border-gray-200 shadow"
             />
-            <div className="text-center space-y-3">
-              <p className="text-gray-600 text-sm">
-                <span className="font-medium text-gray-800">GitHub Login:</span> {user.githubLogin}
-              </p>
-              <p className="text-gray-600 text-sm">
-                <span className="font-medium text-gray-800">GitHub URL:</span>{' '}
-                <a
-                  href={user.githubUrl}
-                  className="text-blue-500 hover:text-blue-600 underline transition-colors duration-200"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {user.githubUrl}
-                </a>
-              </p>
-            </div>
+            <h2 className="text-2xl font-bold mb-1">Hello, {user.name} 👋</h2>
+            <p className="text-gray-600 text-sm mb-2">
+              <span className="font-medium text-gray-800">GitHub Login:</span> {user.githubLogin}
+            </p>
+            <p className="text-gray-600 text-sm">
+              <span className="font-medium text-gray-800">GitHub URL:</span>{' '}
+              <a
+                href={user.githubUrl}
+                className="text-blue-500 hover:text-blue-600 underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {user.githubUrl}
+              </a>
+            </p>
           </div>
-          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
+        </div>
+
+        {/* Projects Section */}
+        <div className="max-w-5xl mx-auto">
+          <div className="flex justify-center mb-6">
             <button
               onClick={handleCreateProject}
-              className="bg-blue-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-600 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="bg-blue-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-600 transition duration-200"
             >
-              Create New Project
-            </button>
-            <button
-              onClick={handleViewProjects}
-              className="border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 hover:border-gray-400 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-300"
-            >
-              View My Projects
+              + Create New Project
             </button>
           </div>
+          <Projects />
         </div>
       </div>
     </div>

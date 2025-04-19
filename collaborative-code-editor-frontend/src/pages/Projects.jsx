@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 
 const Projects = () => {
   const [ownedProjects, setOwnedProjects] = useState([]);
@@ -196,7 +195,6 @@ const Projects = () => {
 
   return (
     <div className="min-h-screen bg-white font-inter text-gray-900">
-      <Navbar />
       <div className="container mx-auto px-6 py-12 max-w-5xl">
       <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-10"> 
           Your Projects
