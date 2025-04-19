@@ -12,7 +12,6 @@ import {
   FolderIcon,
   DocumentIcon,
   PlayIcon,
-  PlusIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CodeBracketIcon,
@@ -25,7 +24,7 @@ const ProjectWorkspace = () => {
   const location = useLocation();
   const [project, setProject] = useState(null);
   const [files, setFiles] = useState([]);
-  const [currentFile, setCurrentFile] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null); // Tracks selected file or folder
   const [fileContent, setFileContent] = useState("");
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
@@ -33,7 +32,6 @@ const ProjectWorkspace = () => {
   const [newFileName, setNewFileName] = useState("");
   const [newFolderName, setNewFolderName] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -78,7 +76,7 @@ const ProjectWorkspace = () => {
   // Debounced function to send editor changes
   const sendEditorChange = useCallback(
     debounce((value) => {
-      if (stompClient.current?.connected && currentFile) {
+      if (stompClient.current?.connected && selectedItem?.type === "file") {
         const message = {
           projectId,
           senderId: userId,
@@ -88,7 +86,7 @@ const ProjectWorkspace = () => {
         };
         try {
           stompClient.current.publish({
-            destination: `/app/collaborate/${projectId}/${currentFile}`,
+            destination: `/app/collaborate/${projectId}/${selectedItem.path}`,
             body: JSON.stringify(message),
           });
         } catch (e) {
@@ -96,7 +94,7 @@ const ProjectWorkspace = () => {
         }
       }
     }, 300),
-    [projectId, currentFile, userId]
+    [projectId, selectedItem, userId]
   );
 
   // Initialize WebSocket connection and join workspace
@@ -119,7 +117,7 @@ const ProjectWorkspace = () => {
           console.log("Session update:", message.body);
         });
 
-        if (currentFile) {
+        if (selectedItem?.type === "file") {
           subscribeToFileUpdates();
           requestInitialCode();
         }
@@ -148,9 +146,9 @@ const ProjectWorkspace = () => {
     };
   }, [projectId, userId]);
 
-  // Manage subscriptions when currentFile changes
+  // Manage subscriptions when selectedItem changes
   useEffect(() => {
-    if (stompClient.current?.connected && projectId && currentFile) {
+    if (stompClient.current?.connected && projectId && selectedItem?.type === "file") {
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe();
       }
@@ -163,12 +161,12 @@ const ProjectWorkspace = () => {
         subscriptionRef.current.unsubscribe();
       }
     };
-  }, [currentFile, projectId]);
+  }, [selectedItem, projectId]);
 
   const subscribeToFileUpdates = () => {
-    if (!stompClient.current?.connected) return;
+    if (!stompClient.current?.connected || selectedItem?.type !== "file") return;
     subscriptionRef.current = stompClient.current.subscribe(
-      `/topic/collaboration/${projectId}/${currentFile}`,
+      `/topic/collaboration/${projectId}/${selectedItem.path}`,
       (message) => {
         try {
           const collaborationMessage = JSON.parse(message.body);
@@ -183,7 +181,7 @@ const ProjectWorkspace = () => {
             }
           }
           // Update file tree
-          const updatedFiles = updateFileByPath(files, currentFile, (file) => ({
+          const updatedFiles = updateFileByPath(files, selectedItem.path, (file) => ({
             ...file,
             content: newContent,
           }));
@@ -196,9 +194,9 @@ const ProjectWorkspace = () => {
   };
 
   const requestInitialCode = () => {
-    if (stompClient.current?.connected && currentFile) {
+    if (stompClient.current?.connected && selectedItem?.type === "file") {
       stompClient.current.publish({
-        destination: `/app/requestCode/${projectId}/${currentFile}`,
+        destination: `/app/requestCode/${projectId}/${selectedItem.path}`,
         body: JSON.stringify({ userId }),
       });
     }
@@ -267,8 +265,8 @@ const ProjectWorkspace = () => {
           projectData.files.find((f) => f.type === "file");
 
         if (firstFile) {
-          setCurrentFile(firstFile.path);
-          setFileContent(firstFile.content); // Set initial file content
+          setSelectedItem(firstFile);
+          setFileContent(firstFile.content);
         }
       } catch (err) {
         setError(err.message);
@@ -278,7 +276,7 @@ const ProjectWorkspace = () => {
     };
 
     fetchProjectData();
-  }, [projectId, navigate]); // Removed location.search from dependencies
+  }, [projectId, navigate]);
 
   // Handle editor changes
   const handleEditorChange = (value) => {
@@ -286,9 +284,9 @@ const ProjectWorkspace = () => {
     sendEditorChange(value);
     setModifiedFiles((prev) => ({
       ...prev,
-      [currentFile]: value,
+      [selectedItem?.path]: value,
     }));
-    const updatedFiles = updateFileByPath(files, currentFile, (file) => ({
+    const updatedFiles = updateFileByPath(files, selectedItem?.path, (file) => ({
       ...file,
       content: value,
     }));
@@ -463,8 +461,8 @@ const ProjectWorkspace = () => {
 
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
-    if (currentFile) {
-      const { language } = getFileTypeInfo(currentFile);
+    if (selectedItem?.type === "file") {
+      const { language } = getFileTypeInfo(selectedItem.path);
       monaco.editor.setModelLanguage(editor.getModel(), language);
       monaco.languages.registerCompletionItemProvider(language, {
         triggerCharacters: ["."],
@@ -522,7 +520,7 @@ const ProjectWorkspace = () => {
 
   const findFileByPath = (fileList, filePath) => {
     for (const item of fileList) {
-      if (item.type === "file" && item.path === filePath) return item;
+      if (item.path === filePath) return item;
       if (item.type === "folder" && item.children) {
         const found = findFileByPath(item.children, filePath);
         if (found) return found;
@@ -544,20 +542,21 @@ const ProjectWorkspace = () => {
     });
   };
 
-  const handleFileClick = (filePath) => {
-    const file = findFileByPath(files, filePath);
-    if (file) {
-      setCurrentFile(filePath);
-      setFileContent(file.content); // Update editor content
-      setExecutionResult(null);
-      setExecutionError(null);
-    }
+  const getParentPath = (path) => {
+    const parts = path.split("/");
+    return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
+  };
+
+  const handleFileClick = (file) => {
+    setSelectedItem(file);
+    setFileContent(file.content);
+    setExecutionResult(null);
+    setExecutionError(null);
   };
 
   const handleFolderClick = (folder) => {
-    setSelectedFolder(folder);
-    setNewFileName("");
-    setIsCreateFileModalOpen(true);
+    setSelectedItem(folder);
+    toggleFolder(folder.path);
   };
 
   const toggleFolder = (folderPath) => {
@@ -586,36 +585,55 @@ const ProjectWorkspace = () => {
       alert("Please enter a file name");
       return;
     }
+    if (newFileName.includes("/")) {
+      alert("File name cannot contain '/'");
+      return;
+    }
     let updatedFiles = [...files];
     const newFileContent = "";
-    if (selectedFolder) {
-      const newFilePath = `${selectedFolder.path}/${newFileName}`;
-      const newFile = {
-        name: newFileName,
-        type: "file",
-        path: newFilePath,
-        content: newFileContent,
-        originalContent: newFileContent,
-      };
-      updatedFiles = updateFileByPath(updatedFiles, selectedFolder.path, (folder) => ({
+
+    // Determine target path
+    let targetPath = newFileName;
+    let parentPath = "";
+    if (selectedItem) {
+      if (selectedItem.type === "folder") {
+        parentPath = selectedItem.path;
+        targetPath = `${parentPath}/${newFileName}`;
+      } else if (selectedItem.type === "file") {
+        parentPath = getParentPath(selectedItem.path);
+        targetPath = parentPath ? `${parentPath}/${newFileName}` : newFileName;
+      }
+    }
+
+    // Check for duplicates
+    const parentFolder = parentPath ? findFileByPath(files, parentPath) : { children: files };
+    if (parentFolder?.children?.some((item) => item.name === newFileName)) {
+      alert("A file or folder with this name already exists");
+      return;
+    }
+
+    const newFile = {
+      name: newFileName,
+      type: "file",
+      path: targetPath,
+      content: newFileContent,
+      originalContent: newFileContent,
+    };
+
+    if (parentPath) {
+      updatedFiles = updateFileByPath(updatedFiles, parentPath, (folder) => ({
         ...folder,
         children: [...(folder.children || []), newFile],
       }));
     } else {
-      updatedFiles.push({
-        name: newFileName,
-        type: "file",
-        path: newFileName,
-        content: newFileContent,
-        originalContent: newFileContent,
-      });
+      updatedFiles.push(newFile);
     }
 
     setFiles(updatedFiles);
-    if (selectedFolder) {
+    if (parentPath) {
       setExpandedFolders((prev) => ({
         ...prev,
-        [selectedFolder.path]: true,
+        [parentPath]: true,
       }));
     }
     setNewFileName("");
@@ -627,16 +645,53 @@ const ProjectWorkspace = () => {
       alert("Please enter a folder name");
       return;
     }
-    const updatedFiles = [...files, {
+    if (newFolderName.includes("/")) {
+      alert("Folder name cannot contain '/'");
+      return;
+    }
+    let updatedFiles = [...files];
+
+    // Determine target path
+    let targetPath = newFolderName;
+    let parentPath = "";
+    if (selectedItem) {
+      if (selectedItem.type === "folder") {
+        parentPath = selectedItem.path;
+        targetPath = `${parentPath}/${newFolderName}`;
+      } else if (selectedItem.type === "file") {
+        parentPath = getParentPath(selectedItem.path);
+        targetPath = parentPath ? `${parentPath}/${newFolderName}` : newFolderName;
+      }
+    }
+
+    // Check for duplicates
+    const parentFolder = parentPath ? findFileByPath(files, parentPath) : { children: files };
+    if (parentFolder?.children?.some((item) => item.name === newFolderName)) {
+      alert("A file or folder with this name already exists");
+      return;
+    }
+
+    const newFolder = {
       name: newFolderName,
       type: "folder",
-      path: newFolderName,
+      path: targetPath,
       children: [],
-    }];
+    };
+
+    if (parentPath) {
+      updatedFiles = updateFileByPath(updatedFiles, parentPath, (folder) => ({
+        ...folder,
+        children: [...(folder.children || []), newFolder],
+      }));
+    } else {
+      updatedFiles.push(newFolder);
+    }
+
     setFiles(updatedFiles);
     setExpandedFolders((prev) => ({
       ...prev,
-      [newFolderName]: true,
+      [targetPath]: true,
+      ...(parentPath && { [parentPath]: true }),
     }));
     setNewFolderName("");
     setIsCreateFolderModalOpen(false);
@@ -687,16 +742,18 @@ const ProjectWorkspace = () => {
       return file.type === "file" ? (
         <li
           key={file.path}
-          className="flex items-center pl-4 py-1.5 hover:bg-gray-200 rounded-lg transition-all duration-200 ease-in-out"
+          className={`flex items-center pl-4 py-1.5 hover:bg-gray-200 rounded-lg transition-all duration-200 ease-in-out ${
+            selectedItem?.path === file.path ? "bg-blue-50" : ""
+          }`}
         >
           <DocumentIcon className="w-4 h-4 text-gray-400 mr-2" />
           <span
             className={`cursor-pointer flex-1 text-sm font-medium ${
-              currentFile === file.path
-                ? "bg-blue-50 text-blue-600 rounded-lg px-2 py-1"
+              selectedItem?.path === file.path
+                ? "text-blue-600"
                 : "text-gray-600 hover:text-blue-500"
             }`}
-            onClick={() => handleFileClick(file.path)}
+            onClick={() => handleFileClick(file)}
           >
             {file.name}
             {modifiedFiles[file.path] && modifiedFiles[file.path] !== file.originalContent && (
@@ -706,6 +763,7 @@ const ProjectWorkspace = () => {
           {getFileTypeInfo(file.path).judge0Language && (
             <button
               onClick={() => {
+                handleFileClick(file); // Open the file in the editor
                 const fileData = findFileByPath(files, file.path);
                 executeCode(
                   file.path,
@@ -728,10 +786,14 @@ const ProjectWorkspace = () => {
         </li>
       ) : (
         <li key={file.path}>
-          <div className="flex items-center pl-4 py-1.5 hover:bg-gray-200 rounded-lg transition-all duration-200 ease-in-out">
+          <div
+            className={`flex items-center pl-4 py-1.5 hover:bg-gray-200 rounded-lg transition-all duration-200 ease-in-out ${
+              selectedItem?.path === file.path ? "bg-blue-50" : ""
+            }`}
+          >
             <div
               className="flex items-center cursor-pointer text-gray-600 hover:text-gray-800 flex-1"
-              onClick={() => toggleFolder(file.path)}
+              onClick={() => handleFolderClick(file)}
             >
               {expandedFolders[file.path] ? (
                 <ChevronDownIcon className="w-4 h-4 text-gray-400 mr-2" />
@@ -739,15 +801,14 @@ const ProjectWorkspace = () => {
                 <ChevronRightIcon className="w-4 h-4 text-gray-400 mr-2" />
               )}
               <FolderIcon className="w-4 h-4 text-gray-400 mr-2" />
-              <span className="text-sm font-medium">{file.name}</span>
+              <span
+                className={`text-sm font-medium ${
+                  selectedItem?.path === file.path ? "text-blue-600" : ""
+                }`}
+              >
+                {file.name}
+              </span>
             </div>
-            <button
-              onClick={() => handleFolderClick(file)}
-              className="text-green-400 hover:text-green-500 p-1 rounded-full transition-all duration-200 ease-in-out"
-              title="Add file to folder"
-            >
-              <PlusIcon className="w-4 h-4" />
-            </button>
           </div>
           {expandedFolders[file.path] ? (
             file.children && file.children.length > 0 ? (
@@ -835,10 +896,7 @@ const ProjectWorkspace = () => {
             )}
             <div className="mt-4 space-y-2">
               <button
-                onClick={() => {
-                  setSelectedFolder(null);
-                  setIsCreateFileModalOpen(true);
-                }}
+                onClick={() => setIsCreateFileModalOpen(true)}
                 className="w-full bg-gradient-to-r from-blue-400 to-blue-500 text-white px-3 py-1.5 rounded-lg font-medium hover:from-blue-500 hover:to-blue-600 transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-300 text-sm"
               >
                 Create File
@@ -878,18 +936,18 @@ const ProjectWorkspace = () => {
               <div className="flex items-center justify-center h-[70vh] bg-gray-100 rounded-2xl">
                 <p className="text-red-500 text-base">Failed to load project: {error}</p>
               </div>
-            ) : currentFile ? (
+            ) : selectedItem?.type === "file" ? (
               <>
                 <div className="bg-black shadow-sm rounded-2xl overflow-hidden">
                   <div className="flex items-center justify-between bg-gray-800 px-4 py-2">
                     <span className="text-sm font-medium text-gray-200 flex items-center">
                       <CodeBracketIcon className="w-4 h-4 mr-2 text-gray-400" />
-                      {currentFile}
+                      {selectedItem.path}
                     </span>
                   </div>
                   <MonacoEditor
                     height="50vh"
-                    language={getFileTypeInfo(currentFile).language}
+                    language={getFileTypeInfo(selectedItem.path).language}
                     value={fileContent}
                     onChange={handleEditorChange}
                     onMount={handleEditorDidMount}
