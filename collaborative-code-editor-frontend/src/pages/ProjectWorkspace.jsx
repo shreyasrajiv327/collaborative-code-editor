@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import MonacoEditor from '@monaco-editor/react';
-import ChatBox from '../components/ChatBox';
-import SockJS from 'sockjs-client';
-import { Client } from '@stomp/stompjs';
-import debounce from 'lodash/debounce';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import MonacoEditor from "@monaco-editor/react";
+import ChatBox from "../components/ChatBox";
+import SockJS from "sockjs-client";
+import { Client } from "@stomp/stompjs";
+import debounce from "lodash/debounce";
 import { toast } from 'react-toastify';
 import useExecuteCode from './ExecutionProject';
 import Navbar from '../components/Navbar';
@@ -26,13 +26,13 @@ const ProjectWorkspace = () => {
   const [project, setProject] = useState(null);
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);
-  const [fileContent, setFileContent] = useState('');
+  const [fileContent, setFileContent] = useState("");
   const [isCreateFileModalOpen, setIsCreateFileModalOpen] = useState(false);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
-  const [newFolderName, setNewFolderName] = useState('');
-  const [commitMessage, setCommitMessage] = useState('');
+  const [newFileName, setNewFileName] = useState("");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [commitMessage, setCommitMessage] = useState("");
   const [selectedFolder, setSelectedFolder] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState({});
   const [loading, setLoading] = useState(true);
@@ -40,7 +40,7 @@ const ProjectWorkspace = () => {
   const [modifiedFiles, setModifiedFiles] = useState({});
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [executionInput, setExecutionInput] = useState('');
+  const [executionInput, setExecutionInput] = useState("");
 
   const {
     executeCode,
@@ -54,20 +54,258 @@ const ProjectWorkspace = () => {
   const stompClient = useRef(null);
   const editorRef = useRef(null);
   const subscriptionRef = useRef(null);
-  const userId = localStorage.getItem('githubLogin');
+  const userId = localStorage.getItem("githubLogin");
 
-  // [Existing getFileTypeInfo, sendEditorChange, WebSocket useEffect, subscribeToFileUpdates, requestInitialCode, fetchProjectData, handleEditorChange functions remain unchanged]
+  // Determine language based on file extension
+  const getFileTypeInfo = (filePath) => {
+    if (!filePath) return { language: "plaintext", judge0Language: null };
+    const extension = filePath.split(".").pop().toLowerCase();
+    const languageMap = {
+      js: { language: "javascript", judge0Language: "javascript" },
+      py: { language: "python", judge0Language: "python3" },
+      html: { language: "html", judge0Language: null },
+      css: { language: "css", judge0Language: null },
+      json: { language: "json", judge0Language: null },
+      md: { language: "markdown", judge0Language: null },
+      ts: { language: "typescript", judge0Language: "typescript" },
+      java: { language: "java", judge0Language: "java" },
+      c: { language: "c", judge0Language: "c" },
+      cpp: { language: "cpp", judge0Language: "cpp" },
+    };
+    return languageMap[extension] || { language: "plaintext", judge0Language: null };
+  };
 
+  // Debounced function to send editor changes
+  const sendEditorChange = useCallback(
+    debounce((value) => {
+      if (stompClient.current?.connected && currentFile) {
+        const message = {
+          projectId,
+          senderId: userId,
+          type: "edit",
+          content: value,
+          timestamp: Date.now(),
+        };
+        try {
+          stompClient.current.publish({
+            destination: `/app/collaborate/${projectId}/${currentFile}`,
+            body: JSON.stringify(message),
+          });
+        } catch (e) {
+          console.error("Failed to send edit:", e);
+        }
+      }
+    }, 300),
+    [projectId, currentFile, userId]
+  );
+
+  // Initialize WebSocket connection and join workspace
+  useEffect(() => {
+    const socket = new SockJS("http://localhost:8080/ws");
+    stompClient.current = new Client({
+      webSocketFactory: () => socket,
+      reconnectDelay: 5000,
+      onConnect: () => {
+        console.log("WebSocket connected");
+
+        // Join the project workspace
+        stompClient.current.publish({
+          destination: `/app/join/${projectId}/`,
+          body: JSON.stringify(userId),
+        });
+
+        // Subscribe to session updates
+        stompClient.current.subscribe(`/topic/session/${projectId}`, (message) => {
+          console.log("Session update:", message.body);
+        });
+
+        if (currentFile) {
+          subscribeToFileUpdates();
+          requestInitialCode();
+        }
+      },
+      onStompError: (frame) => {
+        console.error("STOMP error:", frame);
+      },
+      onWebSocketClose: () => {
+        console.warn("WebSocket closed");
+      },
+    });
+
+    stompClient.current.activate();
+
+    return () => {
+      if (stompClient.current) {
+        if (stompClient.current.connected) {
+          stompClient.current.publish({
+            destination: `/app/leave/${projectId}/`,
+            body: JSON.stringify(userId),
+          });
+        }
+        stompClient.current.deactivate();
+        console.log("WebSocket deactivated");
+      }
+    };
+  }, [projectId, userId]);
+
+  // Manage subscriptions when currentFile changes
+  useEffect(() => {
+    if (stompClient.current?.connected && projectId && currentFile) {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe();
+      }
+      subscribeToFileUpdates();
+      requestInitialCode();
+    }
+
+    return () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe();
+      }
+    };
+  }, [currentFile, projectId]);
+
+  const subscribeToFileUpdates = () => {
+    if (!stompClient.current?.connected) return;
+    subscriptionRef.current = stompClient.current.subscribe(
+      `/topic/collaboration/${projectId}/${currentFile}`,
+      (message) => {
+        try {
+          const collaborationMessage = JSON.parse(message.body);
+          const newContent = collaborationMessage.content || "";
+          setFileContent(newContent);
+          if (editorRef.current) {
+            const position = editorRef.current.getPosition();
+            const currentValue = editorRef.current.getValue();
+            if (currentValue !== newContent) {
+              editorRef.current.setValue(newContent);
+              editorRef.current.setPosition(position);
+            }
+          }
+          // Update file tree
+          const updatedFiles = updateFileByPath(files, currentFile, (file) => ({
+            ...file,
+            content: newContent,
+          }));
+          setFiles(updatedFiles);
+        } catch (e) {
+          console.error("Error parsing collaboration message:", e);
+        }
+      }
+    );
+  };
+
+  const requestInitialCode = () => {
+    if (stompClient.current?.connected && currentFile) {
+      stompClient.current.publish({
+        destination: `/app/requestCode/${projectId}/${currentFile}`,
+        body: JSON.stringify({ userId }),
+      });
+    }
+  };
+
+  // Fetch project data
+  useEffect(() => {
+    const fetchProjectData = async () => {
+      setLoading(true);
+      setError(null);
+      const queryParams = new URLSearchParams(location.search);
+      const owner = queryParams.get("owner");
+      const accessToken = localStorage.getItem("token");
+      const repo = projectId;
+      const branch = "main";
+
+      if (!owner || !accessToken) {
+        alert("Authentication missing. Please log in again.");
+        navigate("/");
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ owner, repo, branch });
+        const response = await fetch(`/api/github/files?${params.toString()}`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.statusText}`);
+        }
+
+        const fileData = await response.json();
+        console.log("Fetched files:", fileData);
+
+        const fileTree = buildFileTree(fileData);
+        const projectData = {
+          id: projectId,
+          name: repo,
+          description: fileData["README.md"]?.split("\n")[1] || `Description for ${repo}`,
+          files: fileTree,
+          owner,
+          repo,
+        };
+
+        setProject(projectData);
+        setFiles(projectData.files || []);
+
+        const initialExpanded = {};
+        const collectFolders = (fileList) => {
+          fileList.forEach((file) => {
+            if (file.type === "folder") {
+              initialExpanded[file.path] = true;
+              if (file.children) collectFolders(file.children);
+            }
+          });
+        };
+        collectFolders(projectData.files);
+        console.log("Initial expanded folders:", initialExpanded);
+        setExpandedFolders(initialExpanded);
+
+        const firstFile =
+          findFileByPath(projectData.files, "index.js") ||
+          projectData.files.find((f) => f.type === "file");
+
+        if (firstFile) {
+          setCurrentFile(firstFile.path);
+          setFileContent(firstFile.content); // Set initial file content
+        }
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjectData();
+  }, [projectId, navigate]); // Removed location.search from dependencies
+
+  // Handle editor changes
+  const handleEditorChange = (value) => {
+    setFileContent(value);
+    sendEditorChange(value);
+    setModifiedFiles((prev) => ({
+      ...prev,
+      [currentFile]: value,
+    }));
+    const updatedFiles = updateFileByPath(files, currentFile, (file) => ({
+      ...file,
+      content: value,
+    }));
+    setFiles(updatedFiles);
+  };
+
+  // Commit changes to GitHub
   const handleCommit = async () => {
     if (!commitMessage) {
       toast.error('Please enter a commit message', { position: 'top-right' });
       return;
     }
     const queryParams = new URLSearchParams(location.search);
-    const owner = queryParams.get('owner');
-    const accessToken = localStorage.getItem('token');
+    const owner = queryParams.get("owner");
+    const accessToken = localStorage.getItem("token");
     const repo = projectId;
-    const branch = 'main';
+    const branch = "main";
 
     const filesWithPaths = {};
     const allFiles = collectAllFiles(files);
@@ -91,10 +329,10 @@ const ProjectWorkspace = () => {
         branch,
       };
 
-      const response = await fetch('http://localhost:8080/api/github/commit', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8080/api/github/commit", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(commitRequest),
@@ -104,15 +342,14 @@ const ProjectWorkspace = () => {
         throw new Error(`Failed to commit: ${response.statusText}`);
       }
 
-      // Update originalContent and clear modifiedFiles
       const updatedFiles = files.map((file) => {
-        if (file.type === 'file' && filesWithPaths[file.path]) {
+        if (file.type === "file" && filesWithPaths[file.path]) {
           return { ...file, originalContent: filesWithPaths[file.path] };
-        } else if (file.type === 'folder' && file.children) {
+        } else if (file.type === "folder" && file.children) {
           return {
             ...file,
             children: file.children.map((child) =>
-              child.type === 'file' && filesWithPaths[child.path]
+              child.type === "file" && filesWithPaths[child.path]
                 ? { ...child, originalContent: filesWithPaths[child.path] }
                 : child
             ),
@@ -124,9 +361,8 @@ const ProjectWorkspace = () => {
       setFiles(updatedFiles);
       setModifiedFiles({});
       toast.success('✅ Commit successful', { position: 'top-right' });
-      setCommitMessage('');
+      setCommitMessage("");
       setIsCommitModalOpen(false);
-
       if (isLeaveModalOpen) {
         setIsLeaveModalOpen(false);
         if (stompClient.current?.connected) {
@@ -135,13 +371,14 @@ const ProjectWorkspace = () => {
             body: JSON.stringify(userId),
           });
         }
-        navigate('/projects');
+        navigate("/projects");
       }
     } catch (err) {
       toast.error(`Error committing: ${err.message}`, { position: 'top-right' });
     }
   };
 
+  // Leave workspace
   const leaveWorkspace = () => {
     if (hasUncommittedChanges()) {
       setIsLeaveModalOpen(true);
@@ -152,11 +389,267 @@ const ProjectWorkspace = () => {
           body: JSON.stringify(userId),
         });
       }
-      navigate('/projects');
+      navigate("/projects");
     }
   };
 
-  // [Existing buildFileTree, collectAllFiles, handleEditorDidMount, findFileByPath, updateFileByPath, handleFileClick, handleFolderClick, toggleFolder, toggleAllFolders, handleCreateFile, handleCreateFolder, hasUncommittedChanges functions remain unchanged]
+  // Build file tree
+  const buildFileTree = (fileData) => {
+    const tree = [];
+    const folders = {};
+
+    Object.entries(fileData).forEach(([path, content]) => {
+      const parts = path.split("/");
+      let currentLevel = tree;
+      let currentPath = "";
+
+      parts.forEach((part, index) => {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+        if (index === parts.length - 1) {
+          currentLevel.push({
+            name: part,
+            type: "file",
+            path: currentPath,
+            content: content || "",
+            originalContent: content || "",
+          });
+        } else {
+          if (!folders[currentPath]) {
+            const folder = {
+              name: part,
+              type: "folder",
+              path: currentPath,
+              children: [],
+            };
+            folders[currentPath] = folder;
+            currentLevel.push(folder);
+            currentLevel = folder.children;
+          } else {
+            currentLevel = folders[currentPath].children;
+          }
+        }
+      });
+    });
+
+    const sortTree = (items) =>
+      items.sort((a, b) => {
+        if (a.type === "folder" && b.type === "file") return -1;
+        if (a.type === "file" && b.type === "folder") return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    const sortedTree = sortTree(tree);
+    sortedTree.forEach((item) => {
+      if (item.type === "folder") {
+        item.children = sortTree(item.children);
+      }
+    });
+
+    console.log("Built file tree:", JSON.stringify(sortedTree, null, 2));
+    return sortedTree;
+  };
+
+  const collectAllFiles = (fileList) => {
+    const allFiles = [];
+    fileList.forEach((item) => {
+      if (item.type === "file") allFiles.push(item);
+      else if (item.type === "folder" && item.children) {
+        allFiles.push(...collectAllFiles(item.children));
+      }
+    });
+    return allFiles;
+  };
+
+  const handleEditorDidMount = (editor, monaco) => {
+    editorRef.current = editor;
+    if (currentFile) {
+      const { language } = getFileTypeInfo(currentFile);
+      monaco.editor.setModelLanguage(editor.getModel(), language);
+      monaco.languages.registerCompletionItemProvider(language, {
+        triggerCharacters: ["."],
+        provideCompletionItems: (model, position) => {
+          const suggestions = language === "javascript" ? [
+            {
+              label: "consoleLog",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "console.log(${1:msg});",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Log to console",
+            },
+            {
+              label: "function",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "function ${1:name}(${2:params}) {\n  ${3}\n}",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Function declaration",
+            },
+            {
+              label: "arrowFunc",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "const ${1:name} = (${2:params}) => {\n  ${3}\n};",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Arrow function",
+            },
+          ] : language === "python" ? [
+            {
+              label: "print",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "print(${1:msg})",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Print to console",
+            },
+            {
+              label: "def",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "def ${1:name}(${2:params}):\n    ${3:pass}",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Function definition",
+            },
+            {
+              label: "class",
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: "class ${1:Name}:\n    def __init__(self):\n        ${2:pass}",
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: "Class definition",
+            },
+          ] : [];
+          return { suggestions };
+        },
+      });
+    }
+  };
+
+  const findFileByPath = (fileList, filePath) => {
+    for (const item of fileList) {
+      if (item.type === "file" && item.path === filePath) return item;
+      if (item.type === "folder" && item.children) {
+        const found = findFileByPath(item.children, filePath);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const updateFileByPath = (fileList, targetPath, updateFn) => {
+    return fileList.map((item) => {
+      if (item.path === targetPath) return updateFn(item);
+      if (item.type === "folder" && item.children) {
+        return {
+          ...item,
+          children: updateFileByPath(item.children, targetPath, updateFn),
+        };
+      }
+      return item;
+    });
+  };
+
+  const handleFileClick = (filePath) => {
+    const file = findFileByPath(files, filePath);
+    if (file) {
+      setCurrentFile(filePath);
+      setFileContent(file.content); // Update editor content
+      setExecutionResult(null);
+      setExecutionError(null);
+    }
+  };
+
+  const handleFolderClick = (folder) => {
+    setSelectedFolder(folder);
+    setNewFileName("");
+    setIsCreateFileModalOpen(true);
+  };
+
+  const toggleFolder = (folderPath) => {
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [folderPath]: prev[folderPath] === undefined ? true : !prev[folderPath],
+    }));
+  };
+
+  const toggleAllFolders = (expand) => {
+    const newExpandedFolders = { ...expandedFolders };
+    const collectFolders = (fileList) => {
+      fileList.forEach((file) => {
+        if (file.type === "folder") {
+          newExpandedFolders[file.path] = expand;
+          if (file.children) collectFolders(file.children);
+        }
+      });
+    };
+    collectFolders(files);
+    setExpandedFolders(newExpandedFolders);
+  };
+
+  const handleCreateFile = () => {
+    if (!newFileName) {
+      alert("Please enter a file name");
+      return;
+    }
+    let updatedFiles = [...files];
+    const newFileContent = "";
+    if (selectedFolder) {
+      const newFilePath = `${selectedFolder.path}/${newFileName}`;
+      const newFile = {
+        name: newFileName,
+        type: "file",
+        path: newFilePath,
+        content: newFileContent,
+        originalContent: newFileContent,
+      };
+      updatedFiles = updateFileByPath(updatedFiles, selectedFolder.path, (folder) => ({
+        ...folder,
+        children: [...(folder.children || []), newFile],
+      }));
+    } else {
+      updatedFiles.push({
+        name: newFileName,
+        type: "file",
+        path: newFileName,
+        content: newFileContent,
+        originalContent: newFileContent,
+      });
+    }
+
+    setFiles(updatedFiles);
+    if (selectedFolder) {
+      setExpandedFolders((prev) => ({
+        ...prev,
+        [selectedFolder.path]: true,
+      }));
+    }
+    setNewFileName("");
+    setIsCreateFileModalOpen(false);
+  };
+
+  const handleCreateFolder = () => {
+    if (!newFolderName) {
+      alert("Please enter a folder name");
+      return;
+    }
+    const updatedFiles = [...files, {
+      name: newFolderName,
+      type: "folder",
+      path: newFolderName,
+      children: [],
+    }];
+    setFiles(updatedFiles);
+    setExpandedFolders((prev) => ({
+      ...prev,
+      [newFolderName]: true,
+    }));
+    setNewFolderName("");
+    setIsCreateFolderModalOpen(false);
+  };
+
+  const hasUncommittedChanges = () => {
+    const allFiles = collectAllFiles(files);
+    return allFiles.some(
+      (file) =>
+        modifiedFiles[file.path] &&
+        modifiedFiles[file.path] !== file.originalContent
+    );
+  };
 
   const handleLeaveConfirm = (commitFirst) => {
     if (commitFirst) {
@@ -170,15 +663,28 @@ const ProjectWorkspace = () => {
         });
       }
       setIsLeaveModalOpen(false);
-      navigate('/projects');
+      navigate("/projects");
     }
   };
 
-  // [Existing useEffect for beforeunload remains unchanged]
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (hasUncommittedChanges()) {
+        event.preventDefault();
+        event.returnValue = "You have uncommitted changes. Are you sure you want to leave?";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [modifiedFiles, files]);
 
   const renderFileTree = (fileList) =>
-    fileList.map((file) =>
-      file.type === 'file' ? (
+    fileList.map((file) => {
+      console.log(`Rendering file/folder: ${file.path}, expanded: ${expandedFolders[file.path]}`);
+      return file.type === "file" ? (
         <li
           key={file.path}
           className="flex items-center pl-4 py-1.5 hover:bg-gray-200 rounded-lg transition-all duration-200 ease-in-out"
@@ -187,8 +693,8 @@ const ProjectWorkspace = () => {
           <span
             className={`cursor-pointer flex-1 text-sm font-medium ${
               currentFile === file.path
-                ? 'bg-blue-50 text-blue-600 rounded-lg px-2 py-1'
-                : 'text-gray-600 hover:text-blue-500'
+                ? "bg-blue-50 text-blue-600 rounded-lg px-2 py-1"
+                : "text-gray-600 hover:text-blue-500"
             }`}
             onClick={() => handleFileClick(file.path)}
           >
@@ -212,7 +718,7 @@ const ProjectWorkspace = () => {
               }}
               disabled={executionLoading}
               className={`text-orange-400 hover:text-orange-500 p-1 rounded-full transition-all duration-200 ease-in-out ${
-                executionLoading ? 'opacity-50 cursor-not-allowed' : ''
+                executionLoading ? "opacity-50 cursor-not-allowed" : ""
               }`}
               title="Execute file"
             >
@@ -243,12 +749,16 @@ const ProjectWorkspace = () => {
               <PlusIcon className="w-4 h-4" />
             </button>
           </div>
-          {expandedFolders[file.path] && file.children && file.children.length > 0 && (
-            <ul className="pl-4">{renderFileTree(file.children)}</ul>
-          )}
+          {expandedFolders[file.path] ? (
+            file.children && file.children.length > 0 ? (
+              <ul className="pl-4">{renderFileTree(file.children)}</ul>
+            ) : (
+              <p className="pl-8 text-sm text-gray-500">No files in this folder</p>
+            )
+          ) : null}
         </li>
-      )
-    );
+      );
+    });
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
@@ -265,7 +775,7 @@ const ProjectWorkspace = () => {
           </div>
           <button
             onClick={leaveWorkspace}
-            className="flex items-center text-sm text-gray-600 hover:text-red-500 transition-all duration-200 ease-in-out"
+            className="flex items-center text-sm text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg font-medium transition-all duration-200 ease-in-out"
           >
             <ArrowLeftIcon className="w-4 h-4 mr-1" />
             Leave Workspace
