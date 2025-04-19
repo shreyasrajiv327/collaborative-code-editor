@@ -11,7 +11,7 @@ const Navbar = () => {
 
     if (!githubLogin) {
       alert("Account details missing. Please log in again.");
-      navigate("/login");
+      navigate("/");
       return;
     }
 
