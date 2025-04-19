@@ -1,7 +1,6 @@
-// Dashboard.js
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Navbar from '../components/Navbar'; // adjust path based on your structure
+import Navbar from '../components/Navbar';
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
@@ -16,27 +15,20 @@ const Dashboard = () => {
       userDetails[key] = value;
     });
 
-    // if (!userDetails.name || !userDetails.avatarUrl || !userDetails.githubLogin) {
-    //   console.log("IM HERE IN DASHBOARD WITH NO USER DETAILS");
-    //   navigate('/');
-    //   return;
-    // }
-
-
     if (userDetails.token) {
       console.log('Setting access token:', userDetails.token);
       queryParams.forEach((value, key) => {
         userDetails[key] = value;
         localStorage.setItem(key, value);
       });
-      console.log("local storage in dashboard", localStorage);
+      console.log('local storage in dashboard', localStorage);
     }
 
     const name = localStorage.getItem('name');
     const avatarUrl = localStorage.getItem('avatarUrl');
     const githubLogin = localStorage.getItem('githubLogin');
     if (!name || !avatarUrl || !githubLogin) {
-      console.log("IM HERE IN DASHBOARD WITH NO USER DETAILS (from localStorage)");
+      console.log('IM HERE IN DASHBOARD WITH NO USER DETAILS (from localStorage)');
       navigate('/');
       return;
     }
@@ -49,8 +41,6 @@ const Dashboard = () => {
       email: localStorage.getItem('email'),
       token: localStorage.getItem('token'),
     });
-
-    
   }, [location, navigate]);
 
   const handleCreateProject = () => {
@@ -61,41 +51,62 @@ const Dashboard = () => {
     navigate('/projects');
   };
 
-  if (!user) return <div className="text-center mt-10">Loading...</div>;
+  if (!user) return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="text-gray-500 text-lg animate-pulse">Loading...</div>
+    </div>
+  );
 
   return (
-    <div>
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
       <Navbar />
-      <div className="p-8">
-        <h1 className="text-2xl font-semibold mb-4">Welcome, {user.name} 👋</h1>
-        <img src={user.avatarUrl} alt="Avatar" className="rounded-full w-20 h-20 mb-4" />
-        <p className="text-lg text-gray-600">GitHub Login: {user.githubLogin}</p>
-        <p className="text-lg text-gray-600">
-          GitHub URL:{' '}
-          <a
-            href={user.githubUrl}
-            className="text-blue-500 underline"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {user.githubUrl}
-          </a>
-        </p>
-        <p className="text-lg text-gray-600">Email: {user.email || 'Not provided'}</p>
-
-        <button
-          onClick={handleCreateProject}
-          className="mt-6 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
-        >
-          Create New Project
-        </button>
-
-        <button
-          onClick={handleViewProjects}
-          className="mt-6 ml-4 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition"
-        >
-          View My Projects
-        </button>
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-16 max-w-2xl">
+        <h2 className="text-2xl font-semibold text-gray-900 mb-8 text-center tracking-tight">
+          Hello, {user.name} 👋
+        </h2>
+        <div className="bg-white shadow-lg rounded-2xl p-8 transition-all duration-300 hover:shadow-xl">
+          <div className="flex flex-col items-center">
+            <img
+              src={user.avatarUrl}
+              alt="Avatar"
+              className="rounded-full w-24 h-24 mb-6 border-4 border-gray-100 shadow-sm transform hover:scale-105 transition-transform duration-200"
+            />
+            <div className="text-center space-y-3">
+              <p className="text-gray-600 text-sm">
+                <span className="font-medium text-gray-800">GitHub Login:</span> {user.githubLogin}
+              </p>
+              <p className="text-gray-600 text-sm">
+                <span className="font-medium text-gray-800">GitHub URL:</span>{' '}
+                <a
+                  href={user.githubUrl}
+                  className="text-blue-500 hover:text-blue-600 underline transition-colors duration-200"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {user.githubUrl}
+                </a>
+              </p>
+              <p className="text-gray-600 text-sm">
+                <span className="font-medium text-gray-800">Email:</span>{' '}
+                {user.email || <span className="text-gray-400">Not provided</span>}
+              </p>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
+            <button
+              onClick={handleCreateProject}
+              className="bg-blue-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-600 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
+              Create New Project
+            </button>
+            <button
+              onClick={handleViewProjects}
+              className="border border-gray-300 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 hover:border-gray-400 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-300"
+            >
+              View My Projects
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
