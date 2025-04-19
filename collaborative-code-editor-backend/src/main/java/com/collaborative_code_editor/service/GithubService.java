@@ -134,6 +134,7 @@ public class GithubService {
             }
 
             logger.info("✅ Collaborator added: {}", collaboratorUsername);
+            System.out.println("Collaborator added");
         } catch (HttpClientErrorException e) {
             logger.error("Error adding collaborator: {}, status: {}, message: {}", collaboratorUsername, e.getStatusCode(), e.getMessage());
             throw new RuntimeException("Failed to add collaborator to GitHub: " + e.getMessage());
@@ -142,23 +143,36 @@ public class GithubService {
 
 
     public void removeCollaboratorFromRepo(User currentUser, String accessToken, String repoUrl, String collaboratorUsername) {
+        if (collaboratorUsername == null || collaboratorUsername.isBlank()) {
+            logger.error("Collaborator username is null or empty");
+            throw new IllegalArgumentException("Collaborator username cannot be null or empty.");
+        }
+
+        System.out.println("imhere");
+
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(accessToken);
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+        headers.set("X-GitHub-Api-Version", "2022-11-28");
 
-        String[] parts = repoUrl.split("/");
-        String owner = currentUser.getGithubLogin();
-//        String owner = parts[parts.length - 2];
-        String repo = parts[parts.length - 1];
+        // Ensure repoUrl is clean
+        String cleanRepoUrl = repoUrl.endsWith("/") ? repoUrl.substring(0, repoUrl.length() - 1) : repoUrl;
+        String url = cleanRepoUrl + "/collaborators/" + collaboratorUsername;
 
-        String url = "https://api.github.com/repos/" + owner + "/" + repo + "/collaborators/" + collaboratorUsername;
-        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.DELETE, new HttpEntity<>(headers), String.class);
+        HttpEntity<String> request = new HttpEntity<>("{}", headers);
 
-        if (!response.getStatusCode().is2xxSuccessful()) {
-            throw new RuntimeException("Failed to remove collaborator from GitHub: " + response.getBody());
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.DELETE, request, String.class);
+
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RuntimeException("Failed to remove collaborator from GitHub: " + response.getBody());
+            }
+            System.out.println("✅ Collaborator removed: " + collaboratorUsername);
+        } catch (HttpClientErrorException e) {
+            logger.error("Error removing collaborator: {}, status: {}, message: {}", collaboratorUsername, e.getStatusCode(), e.getMessage());
+            throw new RuntimeException("Failed to remove collaborator to GitHub: " + e.getMessage());
         }
-
-        System.out.println("✅ Collaborator removed: " + collaboratorUsername);
     }
 
 

@@ -278,36 +278,31 @@ const Projects = () => {
         </div>
       </div>
 
-      {/* Add Collaborator Modal */}
       {isAddCollaboratorModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-          <div className="bg-notion-offwhite p-6 rounded-lg w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold mb-4">
-              Add Collaborator to {selectedProjectName}
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Add Collaborator</h2>
             <input
               type="text"
-              placeholder="GitHub Username (e.g., johnDoe)"
+              placeholder="GitHub username"
               value={collaboratorUsername}
               onChange={(e) => setCollaboratorUsername(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              className="w-full px-4 py-2 border rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {addCollaboratorError && (
-              <p className="text-red-600 text-sm mb-4">{addCollaboratorError}</p>
+              <p className="text-red-600 text-sm mb-2">{addCollaboratorError}</p>
             )}
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setIsAddCollaboratorModalOpen(false)}
-                className="text-gray-600 hover:text-gray-900"
+                className="px-4 py-2 text-sm rounded-md bg-gray-200 hover:bg-gray-300 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddCollaboratorSubmit}
-                className={`bg-gray-900 text-white px-4 py-2 rounded-md font-medium hover:bg-gray-700 transition ${
-                  isAddingCollaborator ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
                 disabled={isAddingCollaborator}
+                className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50"
               >
                 {isAddingCollaborator ? 'Adding...' : 'Add'}
               </button>
@@ -316,36 +311,31 @@ const Projects = () => {
         </div>
       )}
 
-      {/* Remove Collaborator Modal */}
       {isRemoveCollaboratorModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-          <div className="bg-notion-offwhite p-6 rounded-lg w-full max-w-md shadow-lg">
-            <h3 className="text-xl font-semibold mb-4">
-              Remove Collaborator from {selectedProjectName}
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Remove Collaborator</h2>
             <input
               type="text"
-              placeholder="GitHub Username (e.g., johnDoe)"
+              placeholder="GitHub username"
               value={removeCollaboratorUsername}
               onChange={(e) => setRemoveCollaboratorUsername(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              className="w-full px-4 py-2 border rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-red-500"
             />
             {removeCollaboratorError && (
-              <p className="text-red-600 text-sm mb-4">{removeCollaboratorError}</p>
+              <p className="text-red-600 text-sm mb-2">{removeCollaboratorError}</p>
             )}
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setIsRemoveCollaboratorModalOpen(false)}
-                className="text-gray-600 hover:text-gray-900"
+                className="px-4 py-2 text-sm rounded-md bg-gray-200 hover:bg-gray-300 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRemoveCollaboratorSubmit}
-                className={`bg-gray-900 text-white px-4 py-2 rounded-md font-medium hover:bg-gray-700 transition ${
-                  isRemovingCollaborator ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
                 disabled={isRemovingCollaborator}
+                className="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
               >
                 {isRemovingCollaborator ? 'Removing...' : 'Remove'}
               </button>

@@ -70,27 +70,27 @@ public class GithubController {
 
     @PostMapping("/remove-collaborator")
     public ResponseEntity<String> removeCollaborator(@RequestAttribute("githubAccessToken") String githubAccessToken,
-                                                     @RequestParam String repoUrl,
+                                                     @RequestParam String repoName,
                                                      @RequestParam String collaboratorUsername,
-                                                     @RequestParam String projectName,
                                                      @AuthenticationPrincipal User currentUser) {
         if (githubAccessToken == null || githubAccessToken.isBlank()) {
             return ResponseEntity.status(401).body("Invalid or expired token");
         }
 
         try {
-            gitHubService.removeCollaboratorFromRepo(currentUser, githubAccessToken, repoUrl, collaboratorUsername);
+            String checkRepoUrl = "https://api.github.com/repos/" + currentUser.getGithubLogin() + "/" + repoName;
+            gitHubService.removeCollaboratorFromRepo(currentUser, githubAccessToken, checkRepoUrl, collaboratorUsername);
         } catch (Exception e) {
             return ResponseEntity.status(500).body("Failed to remove collaborator from GitHub");
         }
 
         try {
-            projectService.removeCollaboratorFromProject(projectName, collaboratorUsername);
+            projectService.removeCollaboratorFromProject(repoName, collaboratorUsername);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Failed to update project in MongoDB");
+            return ResponseEntity.status(500).body("❌ Collaborator removed from GitHub, but failed to update MongoDB" + e.getMessage());
         }
 
-        return ResponseEntity.ok("Collaborator removed from GitHub and project updated");
+        return ResponseEntity.ok("Collaborator removed from GitHub and project updated successfully");
     }
 
     @PostMapping("/commit")
