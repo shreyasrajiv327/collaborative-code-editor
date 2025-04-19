@@ -25,6 +25,8 @@ const ProjectWorkspace = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modifiedFiles, setModifiedFiles] = useState({});
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false); 
+
   const {
     executeCode,
     executionResult,
@@ -314,7 +316,7 @@ const ProjectWorkspace = () => {
     const accessToken = localStorage.getItem("token");
     const repo = projectId;
     const branch = "main";
-
+  
     const filesWithPaths = {};
     const allFiles = collectAllFiles(files);
     allFiles.forEach((file) => {
@@ -322,12 +324,12 @@ const ProjectWorkspace = () => {
         filesWithPaths[file.path] = modifiedFiles[file.path];
       }
     });
-
+  
     if (Object.keys(filesWithPaths).length === 0) {
       alert("No changes to commit");
       return;
     }
-
+  
     try {
       const commitRequest = {
         owner,
@@ -336,7 +338,7 @@ const ProjectWorkspace = () => {
         commitMessage,
         branch,
       };
-
+  
       const response = await fetch("http://localhost:8080/api/github/commit", {
         method: "POST",
         headers: {
@@ -345,15 +347,43 @@ const ProjectWorkspace = () => {
         },
         body: JSON.stringify(commitRequest),
       });
-
+  
       if (!response.ok) {
         throw new Error(`Failed to commit: ${response.statusText}`);
       }
-
+  
+      const updatedFiles = files.map((file) => {
+        if (file.type === "file" && filesWithPaths[file.path]) {
+          return { ...file, originalContent: filesWithPaths[file.path] };
+        } else if (file.type === "folder" && file.children) {
+          return {
+            ...file,
+            children: file.children.map((child) =>
+              child.type === "file" && filesWithPaths[child.path]
+                ? { ...child, originalContent: filesWithPaths[child.path] }
+                : child
+            ),
+          };
+        }
+        return file;
+      });
+  
+      setFiles(updatedFiles);
+      setModifiedFiles({});
       alert("✅ Commit successful.");
       setCommitMessage("");
       setIsCommitModalOpen(false);
-      setModifiedFiles({});
+      if (isLeaveModalOpen) {
+        // Proceed to leave after committing
+        setIsLeaveModalOpen(false);
+        if (stompClient.current?.connected) {
+          stompClient.current.publish({
+            destination: `/app/leave/${projectId}/`,
+            body: JSON.stringify(userId),
+          });
+        }
+        navigate("/projects");
+      }
     } catch (err) {
       alert(`Error committing: ${err.message}`);
     }
@@ -361,13 +391,17 @@ const ProjectWorkspace = () => {
 
   // Leave workspace
   const leaveWorkspace = () => {
-    if (stompClient.current?.connected) {
-      stompClient.current.publish({
-        destination: `/app/leave/${projectId}/`,
-        body: JSON.stringify(userId),
-      });
+    if (hasUncommittedChanges()) {
+      setIsLeaveModalOpen(true); // Show leave confirmation modal
+    } else {
+      if (stompClient.current?.connected) {
+        stompClient.current.publish({
+          destination: `/app/leave/${projectId}/`,
+          body: JSON.stringify(userId),
+        });
+      }
+      navigate("/projects");
     }
-    navigate("/projects");
   };
 
   // Other unchanged functions (buildFileTree, collectAllFiles, handleEditorDidMount, etc.)
@@ -520,20 +554,6 @@ const ProjectWorkspace = () => {
     });
   };
 
-  // const handleFileClick = (filePath) => {
-  //   setCurrentFile(filePath);
-  //   const file = findFileByPath(files, filePath);
-  //   const content = modifiedFiles[filePath] || file?.content || "";
-  //   setFileContent(content);
-  //   if (editorRef.current) {
-  //     const { language } = getFileTypeInfo(filePath);
-  //     window.monaco.editor.setModelLanguage(editorRef.current.getModel(), language);
-  //     editorRef.current.setValue(content);
-  //   }
-  //   setExecutionResult(null);
-  //   setExecutionError(null);
-  // };
-
   const handleFileClick = (filePath) => {
     setCurrentFile(filePath);
     setExecutionResult(null);
@@ -614,15 +634,59 @@ const ProjectWorkspace = () => {
     setIsCreateFolderModalOpen(false);
   };
 
+  const hasUncommittedChanges = () => {
+    const allFiles = collectAllFiles(files);
+    return allFiles.some(
+      (file) =>
+        modifiedFiles[file.path] &&
+        modifiedFiles[file.path] !== file.originalContent
+    );
+  };
+
+  const handleLeaveConfirm = (commitFirst) => {
+    if (commitFirst) {
+      setIsLeaveModalOpen(false);
+      setIsCommitModalOpen(true); // Open commit modal
+    } else {
+      if (stompClient.current?.connected) {
+        stompClient.current.publish({
+          destination: `/app/leave/${projectId}/`,
+          body: JSON.stringify(userId),
+        });
+      }
+      setIsLeaveModalOpen(false);
+      navigate("/projects");
+    }
+  };
+
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (hasUncommittedChanges()) {
+        event.preventDefault();
+        event.returnValue = "You have uncommitted changes. Are you sure you want to leave?";
+      }
+    };
+  
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [modifiedFiles, files]);
+
   const renderFileTree = (fileList) =>
     fileList.map((file) =>
       file.type === "file" ? (
         <li key={file.path} className="flex items-center pl-2 py-1">
           <span
-            className={`cursor-pointer flex-1 rounded ${currentFile === file.path ? 'bg-blue-100 text-blue-800' : 'text-blue-600 hover:text-blue-800'}`}
+            className={`cursor-pointer flex-1 rounded ${
+              currentFile === file.path ? "bg-blue-100 text-blue-800" : "text-blue-600 hover:text-blue-800"
+            }`}
             onClick={() => handleFileClick(file.path)}
           >
             📄 {file.name}
+            {modifiedFiles[file.path] && modifiedFiles[file.path] !== file.originalContent && (
+              <span className="text-red-500 ml-1">*</span> // Visual indicator for modified files
+            )}
           </span>
           {getFileTypeInfo(file.path).judge0Language && (
             <button
@@ -637,7 +701,9 @@ const ProjectWorkspace = () => {
                 );
               }}
               disabled={executionLoading}
-              className={`text-orange-500 hover:text-orange-700 text-sm ml-2 ${executionLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`text-orange-500 hover:text-orange-700 text-sm ml-2 ${
+                executionLoading ? "opacity-50 cursor-not-allowed" : ""
+              }`}
               title="Execute file"
             >
               ▶
@@ -669,214 +735,237 @@ const ProjectWorkspace = () => {
       )
     );
 
-  return (
-    <div className="flex min-h-screen bg-gray-100">
-      {/* Left Sidebar - File Tree */}
-      <div className="w-1/4 bg-white p-4 shadow-md">
-        <h3 className="text-xl font-bold mb-4 text-gray-800">Files</h3>
-        {loading ? (
-          <p className="text-gray-500">Loading files...</p>
-        ) : error ? (
-          <p className="text-red-500">Error: {error}</p>
-        ) : files.length ? (
-          <ul className="space-y-1">{renderFileTree(files)}</ul>
-        ) : (
-          <p className="text-gray-500">No files found</p>
-        )}
-        <div className="mt-6 space-y-2">
-          <button
-            onClick={() => {
-              setSelectedFolder(null);
-              setIsCreateFileModalOpen(true);
-            }}
-            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
-          >
-            Create File
-          </button>
-          <button
-            onClick={() => setIsCreateFolderModalOpen(true)}
-            className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 transition"
-          >
-            Create Folder
-          </button>
-          <button
-            onClick={() => setIsCommitModalOpen(true)}
-            className="w-full bg-purple-500 text-white p-2 rounded hover:bg-purple-600 transition"
-          >
-            Commit Changes
-          </button>
-          <button
-            onClick={leaveWorkspace}
-            className="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 transition"
-          >
-            Leave Workspace
-          </button>
+    return (
+      <div className="flex min-h-screen bg-gray-100">
+        {/* Left Sidebar - File Tree */}
+        <div className="w-1/4 bg-white p-4 shadow-md">
+          <h3 className="text-xl font-bold mb-4 text-gray-800">Files</h3>
+          {loading ? (
+            <p className="text-gray-500">Loading files...</p>
+          ) : error ? (
+            <p className="text-red-500">Error: {error}</p>
+          ) : files.length ? (
+            <ul className="space-y-1">{renderFileTree(files)}</ul>
+          ) : (
+            <p className="text-gray-500">No files found</p>
+          )}
+          <div className="mt-6 space-y-2">
+            <button
+              onClick={() => {
+                setSelectedFolder(null);
+                setIsCreateFileModalOpen(true);
+              }}
+              className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
+            >
+              Create File
+            </button>
+            <button
+              onClick={() => setIsCreateFolderModalOpen(true)}
+              className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 transition"
+            >
+              Create Folder
+            </button>
+            <button
+              onClick={() => setIsCommitModalOpen(true)}
+              className="w-full bg-purple-500 text-white p-2 rounded hover:bg-purple-600 transition"
+            >
+              Commit Changes
+            </button>
+            <button
+              onClick={leaveWorkspace}
+              className="w-full bg-red-500 text-white p-2 rounded hover:bg-red-600 transition"
+            >
+              Leave Workspace
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/* Center - Code Editor and Execution Results */}
-      <div className="w-2/4 p-6">
-        <h2 className="text-2xl font-semibold mb-2 text-gray-800">{project?.name || "Loading..."}</h2>
-        <p className="text-gray-600 mb-4">{project?.description || ""}</p>
-        {loading ? (
-          <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
-            <p className="text-gray-500 text-lg">Loading editor...</p>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
-            <p className="text-red-500 text-lg">Failed to load project: {error}</p>
-          </div>
-        ) : currentFile ? (
-          <>
-            <div className="mb-4">
-              <MonacoEditor
-                height="400px"
-                language={getFileTypeInfo(currentFile).language}
-                value={fileContent}
-                onChange={handleEditorChange}
-                onMount={handleEditorDidMount}
-                options={{
-                  theme: "vs-dark",
-                  fontSize: 14,
-                  automaticLayout: true,
-                  minimap: { enabled: false },
-                  wordWrap: "on",
-                  scrollBeyondLastLine: false,
-                  suggest: {
-                    snippetsPreventQuickSuggestions: false,
-                    suggestions: true,
-                  },
-                  quickSuggestions: {
-                    other: true,
-                    comments: true,
-                    strings: true,
-                  },
-                  padding: { top: 10, bottom: 10 },
-                }}
+    
+        {/* Center - Code Editor and Execution Results */}
+        <div className="w-2/4 p-6">
+          <h2 className="text-2xl font-semibold mb-2 text-gray-800">{project?.name || "Loading..."}</h2>
+          <p className="text-gray-600 mb-4">{project?.description || ""}</p>
+          {loading ? (
+            <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
+              <p className="text-gray-500 text-lg">Loading editor...</p>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
+              <p className="text-red-500 text-lg">Failed to load project: {error}</p>
+            </div>
+          ) : currentFile ? (
+            <>
+              <div className="mb-4">
+                <MonacoEditor
+                  height="400px"
+                  language={getFileTypeInfo(currentFile).language}
+                  value={fileContent}
+                  onChange={handleEditorChange}
+                  onMount={handleEditorDidMount}
+                  options={{
+                    theme: "vs-dark",
+                    fontSize: 14,
+                    automaticLayout: true,
+                    minimap: { enabled: false },
+                    wordWrap: "on",
+                    scrollBeyondLastLine: false,
+                    suggest: {
+                      snippetsPreventQuickSuggestions: false,
+                      suggestions: true,
+                    },
+                    quickSuggestions: {
+                      other: true,
+                      comments: true,
+                      strings: true,
+                    },
+                    padding: { top: 10, bottom: 10 },
+                  }}
+                />
+              </div>
+              <div className="bg-gray-200 p-4 rounded">
+                <h3 className="text-lg font-semibold mb-2 text-gray-800">Execution Results</h3>
+                {executionLoading && <p className="text-gray-500">Executing...</p>}
+                {executionError && <p className="text-red-500">{executionError}</p>}
+                {executionResult && (
+                  <div className="p-4 bg-white rounded shadow">
+                    <p><strong>Status:</strong> {executionResult.status?.description}</p>
+                    {executionResult.stdout && (
+                      <p><strong>Output (stdout):</strong> <pre>{executionResult.stdout}</pre></p>
+                    )}
+                    {executionResult.stderr && (
+                      <p><strong>Error (stderr):</strong> <pre>{executionResult.stderr}</pre></p>
+                    )}
+                    <p><strong>Exit Code:</strong> {executionResult.exit_code ?? "N/A"}</p>
+                    <p><strong>Time:</strong> {executionResult.time ? `${executionResult.time} s` : "N/A"}</p>
+                    <p><strong>Memory:</strong> {executionResult.memory ? `${executionResult.memory} KB` : "N/A"}</p>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
+              <p className="text-gray-500 text-lg">Select a file to edit</p>
+            </div>
+          )}
+        </div>
+    
+        {/* Right Sidebar - Chat */}
+        <div className="w-1/4 bg-gray-800 text-white p-4 shadow-md">
+          <h3 className="text-xl font-bold mb-4">Chat</h3>
+          <ChatBox projectId={projectId} username={userId} />
+        </div>
+    
+        {/* Modals */}
+        {isCreateFileModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
+              <h3 className="text-lg font-semibold mb-4">Create a New File</h3>
+              <input
+                type="text"
+                placeholder="File Name (e.g., script.js)"
+                value={newFileName}
+                onChange={(e) => setNewFileName(e.target.value)}
+                className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => setIsCreateFileModalOpen(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateFile}
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition"
+                >
+                  Create
+                </button>
+              </div>
             </div>
-            <div className="bg-gray-200 p-4 rounded">
-              <h3 className="text-lg font-semibold mb-2 text-gray-800">Execution Results</h3>
-              {executionLoading && <p className="text-gray-500">Executing...</p>}
-              {executionError && <p className="text-red-500">{executionError}</p>}
-              {executionResult && (
-                <div className="p-4 bg-white rounded shadow">
-                  <p><strong>Status:</strong> {executionResult.status?.description}</p>
-                  {executionResult.stdout && (
-                    <p><strong>Output (stdout):</strong> <pre>{executionResult.stdout}</pre></p>
-                  )}
-                  {executionResult.stderr && (
-                    <p><strong>Error (stderr):</strong> <pre>{executionResult.stderr}</pre></p>
-                  )}
-                  <p><strong>Exit Code:</strong> {executionResult.exit_code ?? "N/A"}</p>
-                  <p><strong>Time:</strong> {executionResult.time ? `${executionResult.time} s` : "N/A"}</p>
-                  <p><strong>Memory:</strong> {executionResult.memory ? `${executionResult.memory} KB` : "N/A"}</p>
-                </div>
-              )}
+          </div>
+        )}
+    
+        {isCreateFolderModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
+              <h3 className="text-lg font-semibold mb-4">Create a New Folder</h3>
+              <input
+                type="text"
+                placeholder="Folder Name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => setIsCreateFolderModalOpen(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateFolder}
+                  className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
+                >
+                  Create
+                </button>
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-[600px] bg-gray-200 rounded">
-            <p className="text-gray-500 text-lg">Select a file to edit</p>
+          </div>
+        )}
+    
+        {isCommitModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
+              <h3 className="text-lg font-semibold mb-4">Commit Changes to GitHub</h3>
+              <input
+                type="text"
+                placeholder="Commit Message (e.g., Update mergeSort.js)"
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => setIsCommitModalOpen(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCommit}
+                  className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition"
+                >
+                  Commit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+    
+        {isLeaveModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
+              <h3 className="text-lg font-semibold mb-4">Uncommitted Changes</h3>
+              <p className="mb-4">You have uncommitted changes. Would you like to commit them before leaving?</p>
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => handleLeaveConfirm(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  Leave Without Committing
+                </button>
+                <button
+                  onClick={() => handleLeaveConfirm(true)}
+                  className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition"
+                >
+                  Commit and Leave
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Right Sidebar - Chat */}
-      <div className="w-1/4 bg-gray-800 text-white p-4 shadow-md">
-        <h3 className="text-xl font-bold mb-4">Chat</h3>
-        <ChatBox projectId={projectId} username={userId} />
-      </div>
-
-      {/* Modals (unchanged) */}
-      {isCreateFileModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
-            <h3 className="text-lg font-semibold mb-4">Create a New File</h3>
-            <input
-              type="text"
-              placeholder="File Name (e.g., script.js)"
-              value={newFileName}
-              onChange={(e) => setNewFileName(e.target.value)}
-              className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => setIsCreateFileModalOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateFile}
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isCreateFolderModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
-            <h3 className="text-lg font-semibold mb-4">Create a New Folder</h3>
-            <input
-              type="text"
-              placeholder="Folder Name"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => setIsCreateFolderModalOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateFolder}
-                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isCommitModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-1/3">
-            <h3 className="text-lg font-semibold mb-4">Commit Changes to GitHub</h3>
-            <input
-              type="text"
-              placeholder="Commit Message (e.g., Update mergeSort.js)"
-              value={commitMessage}
-              onChange={(e) => setCommitMessage(e.target.value)}
-              className="border p-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => setIsCommitModalOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCommit}
-                className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition"
-              >
-                Commit
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default ProjectWorkspace;
