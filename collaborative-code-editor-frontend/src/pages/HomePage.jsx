@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import GitHubLoginButton from '../components/LoginButton'; 
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -9,29 +10,19 @@ const HomePage = () => {
       {/* Hero Section */}
       <section className="py-20 md:py-32 text-center">
         <div className="container mx-auto px-6 max-w-4xl">
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6">
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4">
             CodeSphere: Your Coding Universe
           </h1>
-          <p className="text-lg md:text-xl text-gray-600 mb-8 leading-relaxed">
+          <p className="text-lg md:text-xl text-gray-600 mt-15 mb-4 leading-relaxed">
             Write, collaborate, and deploy code seamlessly. CodeSphere combines a
             powerful IDE, GitHub integration, and team tools in one place.
           </p>
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => navigate('/signup')}
-              className="bg-gray-900 text-white px-6 py-3 rounded-md font-medium hover:bg-gray-700 transition"
-            >
-              Get Started
-            </button>
-            <button
-              onClick={() => navigate('/login')}
-              className="border border-gray-900 text-gray-900 px-6 py-3 rounded-md font-medium hover:bg-gray-100 transition"
-            >
-              Log In
-            </button>
-          </div>
+          <p className="text-lg text-gray-600">
+            Whether you're a solo developer or part of a team, CodeSphere helps you stay productive, organized, and connected.
+          </p>
         </div>
       </section>
+
 
       {/* Features Section */}
       <section className="py-16 bg-gray-50">
@@ -110,8 +101,8 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Call to Action Section */}
-      <section className="py-16 text-center">
+            {/* Call to Action Section */}
+            <section className="py-16 text-center">
         <div className="container mx-auto px-6 max-w-3xl">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             Start Building Today
@@ -120,12 +111,21 @@ const HomePage = () => {
             Join a community of developers creating the future. CodeSphere is free
             to start, with powerful tools for every coder.
           </p>
-          <button
-            onClick={() => navigate('/signup')}
-            className="bg-gray-900 text-white px-8 py-3 rounded-md font-medium hover:bg-gray-700 transition"
-          >
-            Try CodeSphere Now
-          </button>
+          <div className="flex flex-col items-center gap-3">
+            <GitHubLoginButton />
+            <p className="text-sm text-gray-600 mt-5">
+              Don’t have a GitHub account?{' '}
+              <a
+                href="https://github.com/signup"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline"
+              >
+                Sign up here
+              </a>
+              .
+            </p>
+          </div>
         </div>
       </section>
 
@@ -135,11 +135,9 @@ const HomePage = () => {
           <p className="mb-4">© 2025 CodeSphere. All rights reserved.</p>
           <div className="flex justify-center gap-6 text-sm">
             <a href="/about" className="hover:text-white transition">
-              About
+              About & Contact
             </a>
-            <a href="/contact" className="hover:text-white transition">
-              Contact
-            </a>
+      
             <a href="/privacy" className="hover:text-white transition">
               Privacy
             </a>
