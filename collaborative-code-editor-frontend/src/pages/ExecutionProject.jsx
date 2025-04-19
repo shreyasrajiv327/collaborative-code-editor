@@ -5,7 +5,7 @@ const useExecuteCode = () => {
   const [executionLoading, setExecutionLoading] = useState(false);
   const [executionError, setExecutionError] = useState(null);
 
-  const executeCode = async (filePath, fileContent, projectId, userId, judge0Language) => {
+  const executeCode = async (filePath, fileContent, projectId, userId, judge0Language, input = "") => {
     if (!fileContent) {
       setExecutionError("No content to execute");
       return;
@@ -34,6 +34,7 @@ const useExecuteCode = () => {
         projectId,
         executedBy: userId,
         filePath,
+        input: input, // Add user input for stdin
       };
 
       const response = await fetch("http://localhost:8080/api/execute", {
@@ -55,7 +56,6 @@ const useExecuteCode = () => {
       console.log("Raw backend response:", result); // Debug log
 
       if (!response.ok) {
-        // If response isn't ok, but still has JSON body with `error` field
         const errorMsg = result.error || `Execution failed: ${response.statusText}`;
         throw new Error(errorMsg);
       }
@@ -65,7 +65,6 @@ const useExecuteCode = () => {
       }
 
       setExecutionResult(result);
-
     } catch (err) {
       console.error("Error executing code:", err);
       setExecutionError(err.message);

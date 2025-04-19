@@ -26,6 +26,7 @@ const ProjectWorkspace = () => {
   const [error, setError] = useState(null);
   const [modifiedFiles, setModifiedFiles] = useState({});
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false); 
+  const [executionInput, setExecutionInput] = useState(""); 
 
   const {
     executeCode,
@@ -685,7 +686,7 @@ const ProjectWorkspace = () => {
           >
             📄 {file.name}
             {modifiedFiles[file.path] && modifiedFiles[file.path] !== file.originalContent && (
-              <span className="text-red-500 ml-1">*</span> // Visual indicator for modified files
+              <span className="text-red-500 ml-1">*</span>
             )}
           </span>
           {getFileTypeInfo(file.path).judge0Language && (
@@ -697,7 +698,8 @@ const ProjectWorkspace = () => {
                   fileData.content,
                   projectId,
                   userId,
-                  getFileTypeInfo(file.path).judge0Language
+                  getFileTypeInfo(file.path).judge0Language,
+                  executionInput // Pass user input
                 );
               }}
               disabled={executionLoading}
@@ -820,6 +822,15 @@ const ProjectWorkspace = () => {
                     padding: { top: 10, bottom: 10 },
                   }}
                 />
+                <div className="mt-4">
+                  <h3 className="text-lg font-semibold mb-2 text-gray-800">Input for Execution</h3>
+                  <textarea
+                    placeholder="Enter input for your program (e.g., for stdin)"
+                    value={executionInput}
+                    onChange={(e) => setExecutionInput(e.target.value)}
+                    className="border p-2 rounded w-full h-20 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
               <div className="bg-gray-200 p-4 rounded">
                 <h3 className="text-lg font-semibold mb-2 text-gray-800">Execution Results</h3>
@@ -827,12 +838,21 @@ const ProjectWorkspace = () => {
                 {executionError && <p className="text-red-500">{executionError}</p>}
                 {executionResult && (
                   <div className="p-4 bg-white rounded shadow">
+                    {executionInput && (
+                      <p>
+                        <strong>Input (stdin):</strong> <pre>{executionInput}</pre>
+                      </p>
+                    )}
                     <p><strong>Status:</strong> {executionResult.status?.description}</p>
                     {executionResult.stdout && (
-                      <p><strong>Output (stdout):</strong> <pre>{executionResult.stdout}</pre></p>
+                      <p>
+                        <strong>Output (stdout):</strong> <pre>{executionResult.stdout}</pre>
+                      </p>
                     )}
                     {executionResult.stderr && (
-                      <p><strong>Error (stderr):</strong> <pre>{executionResult.stderr}</pre></p>
+                      <p>
+                        <strong>Error (stderr):</strong> <pre>{executionResult.stderr}</pre>
+                      </p>
                     )}
                     <p><strong>Exit Code:</strong> {executionResult.exit_code ?? "N/A"}</p>
                     <p><strong>Time:</strong> {executionResult.time ? `${executionResult.time} s` : "N/A"}</p>
