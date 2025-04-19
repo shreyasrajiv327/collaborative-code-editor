@@ -8,6 +8,7 @@ const LoginButton = () => {
 
   return (
     <button
+      onClick={handleLogin} // ✅ Add this line
       className="bg-black text-white py-3 px-6 rounded-lg hover:bg-gray-800 transition"
     >
       Login with GitHub
