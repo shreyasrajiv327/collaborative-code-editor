@@ -1,12 +1,14 @@
 package com.collaborative_code_editor.service;
 
-import com.collaborative_code_editor.model.ChatMessage;
+import com.collaborative_code_editor.model.WebSocketClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,6 +30,30 @@ public class RedisService {
     public Set<Object> getProjectUsers(String projectId) {
         return redisTemplate.opsForSet().members("users:" + projectId);
     }
+
+    public void removeUserAndCleanUpIfLast(String projectId, String userId) {
+        String userKey = "users:" + projectId;
+        Long userCount = redisTemplate.opsForSet().size(userKey);
+
+        if (userCount != null && userCount <= 1) {
+            // Remove the last user
+            redisTemplate.opsForSet().remove(userKey, userId);
+
+            // Clean up related Redis keys
+            redisTemplate.delete("chat:" + projectId);
+            redisTemplate.delete("typing:" + projectId);
+
+            Set<String> keysToDelete = new HashSet<>();
+            keysToDelete.addAll(redisTemplate.keys("code:" + projectId + ":*"));
+            if (!keysToDelete.isEmpty()) {
+                redisTemplate.delete(keysToDelete);
+            }
+        } else {
+            // Just remove the user
+            redisTemplate.opsForSet().remove(userKey, userId);
+        }
+    }
+
 
     // Live Collaboration State
     public void updateUserEditingState(String projectId, String userId, String cursor, String tempCode) {
@@ -51,6 +77,19 @@ public class RedisService {
     public void removeWebSocketClient(String socketId) {
         redisTemplate.opsForSet().remove("ws:clients", socketId);
         redisTemplate.delete("ws:session:" + socketId);
+    }
+
+    public WebSocketClient getWebSocketClient(String socketId) {
+        Map<Object, Object> metadata = redisTemplate.opsForHash().entries("ws:session:" + socketId);
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        String userId = (String) metadata.get("userId");
+        String projectId = (String) metadata.get("projectId");
+        if (userId == null || projectId == null) {
+            return null;
+        }
+        return new WebSocketClient(userId, projectId);
     }
 
     public Map<Object, Object> getClientMetadata(String socketId) {
@@ -78,8 +117,8 @@ public class RedisService {
     }
 
     public void deleteChatAndTyping(String projectId, String filePath) {
-        redisTemplate.delete("chat:" + projectId + ":" + filePath);
-        redisTemplate.delete("typing:" + projectId + ":" + filePath);
+        redisTemplate.delete("chat:" + projectId);
+        redisTemplate.delete("typing:" + projectId);
     }
 
     // General data persistence

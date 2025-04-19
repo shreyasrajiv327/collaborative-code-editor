@@ -1,4 +1,4 @@
-package com.collaborative_code_editor.websocket;
+package com.collaborative_code_editor.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;

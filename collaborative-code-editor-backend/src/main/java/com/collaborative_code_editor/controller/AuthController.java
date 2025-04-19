@@ -113,6 +113,6 @@ public class AuthController {
         System.out.println("*********** LOGGED OUT ************");
 
         // Redirect to the home page after logout
-        return new RedirectView("http://localhost:5173/create");
+        return new RedirectView("http://localhost:5173/");
     }
 }

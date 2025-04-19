@@ -1,6 +1,5 @@
-package com.collaborative_code_editor.websocket;
+package com.collaborative_code_editor.service;
 
-import com.collaborative_code_editor.service.RedisService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -8,7 +7,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class SessionTracker {
+public class SessionTrackerService {
 
     private final Map<String, Set<String>> projectUsers = new ConcurrentHashMap<>();
 
@@ -26,7 +25,7 @@ public class SessionTracker {
     }
 
     // Removes a user from the project session
-    public void removeUser(String projectId, String userId, String filePath) {
+    public void removeUser(String projectId, String userId) {
         Set<String> users = projectUsers.get(projectId);
         if (users != null) {
             users.remove(userId);
@@ -34,11 +33,11 @@ public class SessionTracker {
                 projectUsers.remove(projectId);  // If no users are left, remove the project session
                 // Clean up Redis data when the last user leaves the project
                 redisService.removeWebSocketClient(projectId);  // Optional: if you're using socket ID
-                redisService.removeUserFromProject(projectId, userId);  // Just in case
-                redisService.deleteCode(projectId, filePath);  // Clean up the code stored in Redis for the project
-                redisService.deleteChatAndTyping(projectId, filePath);  // Clean up chat and typing data
+                redisService.removeUserAndCleanUpIfLast(projectId, userId);  // Just in case
+//                redisService.deleteCode(projectId, filePath);  // Clean up the code stored in Redis for the project
+//                redisService.deleteChatAndTyping(projectId, filePath);  // Clean up chat and typing data
             } else {
-                redisService.removeUserFromProject(projectId, userId);  // Remove the user from Redis
+                redisService.removeUserAndCleanUpIfLast(projectId, userId);  // Remove the user from Redis
             }
         }
     }
@@ -46,5 +45,11 @@ public class SessionTracker {
     // Gets the list of users for a given project
     public Set<String> getUsers(String projectId) {
         return projectUsers.getOrDefault(projectId, Collections.emptySet());
+    }
+
+    // Checks if a user is active in a project
+    public boolean isUserActive(String projectId, String userId) {
+        Set<String> users = projectUsers.get(projectId);
+        return users != null && users.contains(userId);
     }
 }

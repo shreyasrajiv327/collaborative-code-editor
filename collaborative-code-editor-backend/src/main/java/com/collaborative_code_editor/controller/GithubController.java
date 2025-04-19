@@ -3,6 +3,7 @@ package com.collaborative_code_editor.controller;
 import com.collaborative_code_editor.model.User;
 import com.collaborative_code_editor.service.GithubService;
 import com.collaborative_code_editor.service.ProjectService;
+import com.collaborative_code_editor.service.RedisService;
 import com.collaborative_code_editor.model.CommitRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -19,6 +20,7 @@ public class GithubController {
 
     private final GithubService gitHubService;
     private final ProjectService projectService;
+    private final RedisService redisService;
 
     @PostMapping("/create-repo")
     public ResponseEntity<String> createRepo(@RequestAttribute(value = "githubAccessToken") String githubAccessToken,
@@ -118,6 +120,8 @@ public class GithubController {
                                                             @RequestParam(defaultValue = "main") String branch,
                                                             @AuthenticationPrincipal User currentUser) {
         Map<String, String> filesWithContent = gitHubService.getRepoContents(githubAccessToken, owner, repo, branch);
+        filesWithContent.forEach((filePath, content) ->
+                redisService.storeCurrentCode(repo, filePath, content != null ? content : ""));
         return ResponseEntity.ok(filesWithContent);
     }
 
