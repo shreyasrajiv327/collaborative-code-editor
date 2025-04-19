@@ -85,8 +85,7 @@ public class AuthController {
 
     // 👉 Logout route (if you're using Spring Security session invalidation)
     @PostMapping("/logout")
-    public ResponseEntity<Map<String, String>> logout(@RequestBody Map<String, String> payload) {
-        System.out.println("Im hereee");
+    public ResponseEntity<Map<String, String>> logout(HttpServletRequest request, HttpServletResponse response, @RequestBody Map<String, String> payload) {
         Map<String, String> responseBody = new HashMap<>();
         String githubLogin = payload.get("githubLogin");
 
@@ -96,72 +95,27 @@ public class AuthController {
         }
 
         try {
-            // Step 1: Remove user from all associated projects in Redis
+            // Clear Redis data
             Set<Object> projectIds = redisService.getProjectUsers(githubLogin);
             if (projectIds != null) {
                 for (Object projectId : projectIds) {
                     redisService.removeUserFromProject((String) projectId, githubLogin);
                 }
             }
-
-            // Step 2: Remove user session from Redis
             redisService.removeUserSession(githubLogin);
 
-            responseBody.put("message", "User logged out and Redis session cleared successfully.");
-            return ResponseEntity.ok(responseBody);
+            // Invalidate Spring Security context
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null) {
+                new SecurityContextLogoutHandler().logout(request, response, auth);
+            }
 
+            System.out.println("User logged out successfully.");
+            responseBody.put("message", "User logged out successfully.");
+            return ResponseEntity.ok(responseBody);
         } catch (Exception e) {
-            System.err.println("Error during Redis logout: " + e.getMessage());
             responseBody.put("error", "Logout failed: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(responseBody);
         }
     }
-
-//    @PostMapping("/logout")
-//    public ResponseEntity<Map<String, String>> logout(HttpServletRequest request, HttpServletResponse response) {
-//        System.out.println("*********** LOGGING OUT ************");
-//
-//        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-//        Map<String, String> responseBody = new HashMap<>();
-//
-//        if (authentication instanceof OAuth2AuthenticationToken oauthToken) {
-//            String userId = oauthToken.getName(); // Extract user ID
-//
-//            try {
-//                // Step 1: Remove user from all projects in Redis
-//                Set<Object> projectIds = redisService.getProjectUsers(userId);
-//                if (projectIds != null) {
-//                    for (Object projectId : projectIds) {
-//                        redisService.removeUserFromProject((String) projectId, userId);
-//                    }
-//                }
-//                redisService.removeUserSession(userId);
-//
-//                // Step 2: Invalidate OAuth2 client session
-//                OAuth2AuthorizedClient authorizedClient = authorizedClientService.loadAuthorizedClient(
-//                        oauthToken.getAuthorizedClientRegistrationId(), userId);
-//                if (authorizedClient != null) {
-//                    authorizedClientService.removeAuthorizedClient(
-//                            oauthToken.getAuthorizedClientRegistrationId(), userId);
-//                    System.out.println("OAuth2 client session invalidated.");
-//                }
-//
-//                // Step 3: Perform Spring Security logout
-//                new SecurityContextLogoutHandler().logout(request, response, authentication);
-//                System.out.println("Spring Security context cleared.");
-//
-//                responseBody.put("message", "Logout successful");
-//                responseBody.put("redirectUrl", "http://localhost:5173/");
-//                return ResponseEntity.ok(responseBody);
-//            } catch (Exception e) {
-//                System.err.println("Error during logout: " + e.getMessage());
-//                responseBody.put("error", "Logout failed: " + e.getMessage());
-//                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(responseBody);
-//            }
-//        } else {
-//            responseBody.put("message", "No active session found");
-//            responseBody.put("redirectUrl", "http://localhost:5173/");
-//            return ResponseEntity.ok(responseBody);
-//        }
-//    }
 }

@@ -9,54 +9,64 @@ const Navbar = () => {
     const accessToken = localStorage.getItem("token");
     const githubLogin = localStorage.getItem("githubLogin");
   
-    if (!accessToken) {
-      alert("Access token missing. Please log in again.");
-      return;
-    }
-  
     if (!githubLogin) {
       alert("Account details missing. Please log in again.");
+      navigate("/login"); // Redirect to login page
       return;
     }
   
     try {
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8080/api/auth/logout", {
+        // Specify full backend URL to avoid relative path issues
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
+          // Only include Authorization if required by JwtAuthenticationFilter
+          ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
         },
-        body: JSON.stringify({
-          githubLogin: githubLogin
-        })
+        body: JSON.stringify({ githubLogin }),
+        credentials: "include", // Include cookies if using sessions
       });
   
       if (!response.ok) {
-        const errorText = await response.text(); // fallback for non-JSON
-        throw new Error(errorText || "Unknown error occurred during logout.");
+        let errorMessage = "Unknown error occurred during logout.";
+        try {
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } else {
+            errorMessage = await response.text() || errorMessage;
+          }
+        } catch (e) {
+          console.error("Error parsing response:", e);
+        }
+        throw new Error(`Logout failed: ${errorMessage}`);
       }
   
-      // Try to parse the JSON safely
-      let data = {};
+      // Parse JSON response if available
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
-        data = await response.json();
-        console.log(data.message);
+        const data = await response.json();
+        console.log("Logout response:", data.message);
       }
   
-      console.log("Logged out");
+      console.log("Logged out successfully");
   
-      // Clear localStorage
-      localStorage.removeItem('token');
-      localStorage.removeItem('name');
-      localStorage.removeItem('avatarUrl');
-      localStorage.removeItem('githubLogin');
-      localStorage.removeItem('githubUrl');
-      localStorage.removeItem('email');
+      // Clear all
+      localStorage.clear(); // Clear all localStorage to avoid stale data
+      // Alternatively, clear specific keys:
+      // localStorage.removeItem("token");
+      // localStorage.removeItem("name");
+      // localStorage.removeItem("avatarUrl");
+      // localStorage.removeItem("githubLogin");
+      // localStorage.removeItem("githubUrl");
+      // localStorage.removeItem("email");
   
-      navigate('/');
+      navigate("/"); // Redirect to login page
     } catch (error) {
-      console.error('Logout failed:', error.message);
+      console.error("Logout failed:", error.message);
+      alert(error.message); // Show user-friendly error
     }
   };
   
